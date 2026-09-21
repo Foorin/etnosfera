@@ -1,0 +1,32 @@
+{
+  "name": "ethnosfera",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:web": "vite",
+    "dev:api": "tsx watch server/index.ts",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "db:seed": "tsx server/db/seed.ts"
+  },
+  "dependencies": {
+    "@libsql/client": "latest",
+    "@vitejs/plugin-react": "latest",
+    "drizzle-orm": "latest",
+    "express": "latest",
+    "lucide-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "typescript": "latest",
+    "vite": "latest"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/express": "latest",
+    "concurrently": "latest",
+    "tsx": "latest"
+  }
+}
