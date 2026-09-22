@@ -30,6 +30,8 @@ import {
   Video,
   X,
 } from 'lucide-react'
+import { MATERIALS, PEOPLES, TOPICS, countForPeople, countForRegion, countForTopic, materialBySlug, materialsFor, peopleByName, topicBySlug } from './data/content'
+import type { Material } from './data/content'
 
 type Region = {
   id: string
@@ -97,104 +99,156 @@ const regions: Region[] = [
   },
 ]
 
-const publications = [
-  {
-    title: 'Песни, которые пели у печи',
-    people: 'Марийцы',
-    selfName: 'марий',
-    region: 'Республика Марий Эл',
-    type: 'Аудиоистория',
-    author: 'Алина П.',
-    color: 'mari',
-    image: 'song',
-  },
-  {
-    title: 'Орнамент на полотенце бабушки',
-    people: 'Чуваши',
-    selfName: 'чăваш',
-    region: 'Республика Марий Эл',
-    type: 'Семейный архив',
-    author: 'Михаил Н.',
-    color: 'chuvash',
-    image: 'pattern',
-  },
-  {
-    title: 'Улицы старого Йошкар-Олы',
-    people: 'Русские',
-    selfName: 'русские',
-    region: 'Республика Марий Эл',
-    type: 'Фотографии',
-    author: 'Анна С.',
-    color: 'russian',
-    image: 'city',
-  },
-]
+const routes = new Set(['home', 'peoples', 'people', 'region', 'topic', 'material', 'collections', 'profile'])
 
-const themes = [
-  ['Язык и слово', '162 материала', 'language'],
-  ['Семейная память', '238 материалов', 'family'],
-  ['Музыка и песни', '86 материалов', 'music'],
-  ['Ремёсла и орнаменты', '115 материалов', 'craft'],
-]
+type Location = {
+  route: string
+  people: string | null
+  topic: string | null
+  material: string | null
+  region: string | null
+}
 
-const routes = new Set(['home', 'peoples', 'people', 'region', 'material', 'collections', 'profile'])
+const HOME: Location = { route: 'home', people: null, topic: null, material: null, region: null }
 
-function getRouteFromHash() {
-  const route = window.location.hash.replace('#', '')
-  return routes.has(route) ? route : 'home'
+// Адрес хранится в хеше сегментами: #people/tatar, #topic/tatar/language, #material/<слаг>.
+// Благодаря этому у каждого материала есть своя ссылка, а обновление страницы не сбрасывает экран.
+function parseHash(): Location {
+  const segments = window.location.hash.replace(/^#\/?/, '').split('/').filter(Boolean)
+  const [route, first, second, third] = segments
+  if (!route || !routes.has(route)) return HOME
+  if (route === 'people') return {
+    ...HOME,
+    route,
+    people: PEOPLES.find((item) => item.slug === first)?.name ?? null,
+    region: regions.find((item) => item.id === second)?.id ?? null,
+  }
+  if (route === 'topic') return {
+    ...HOME,
+    route,
+    people: PEOPLES.find((item) => item.slug === first)?.name ?? null,
+    topic: TOPICS.find((item) => item.slug === second)?.slug ?? null,
+    region: regions.find((item) => item.id === third)?.id ?? null,
+  }
+  if (route === 'material') {
+    const material = MATERIALS.find((item) => item.slug === first)
+    if (!material) return HOME
+    return { ...HOME, route, people: material.people, topic: material.topic, material: material.slug }
+  }
+  if (route === 'region') return { ...HOME, route, region: first ?? null }
+  return { ...HOME, route }
+}
+
+function shortRegion(name: string) {
+  return name.replace('Республика ', '').replace('Удмуртская Республика', 'Удмуртия')
+}
+
+function regionInPrepositional(name: string) {
+  return name
+    .replace('Удмуртская Республика', 'Удмуртской Республике')
+    .replace('Республика', 'Республике')
+}
+
+function materialsWord(count: number) {
+  const tail = count % 100 >= 11 && count % 100 <= 14 ? 0 : count % 10
+  if (tail === 1) return `${count} материал`
+  if (tail >= 2 && tail <= 4) return `${count} материала`
+  return `${count} материалов`
+}
+
+function locationToHash(location: Location) {
+  if (location.route === 'people') return [
+    'people',
+    PEOPLES.find((item) => item.name === location.people)?.slug ?? '',
+    location.region,
+  ].filter(Boolean).join('/')
+  if (location.route === 'topic') return [
+    'topic',
+    PEOPLES.find((item) => item.name === location.people)?.slug ?? 'all',
+    location.topic ?? '',
+    location.region,
+  ].filter(Boolean).join('/')
+  if (location.route === 'material') return `material/${location.material ?? ''}`
+  if (location.route === 'region') return `region/${location.region ?? ''}`
+  return location.route
 }
 
 function App() {
   const [selectedRegion, setSelectedRegion] = useState<Region>(regions[0])
   const [selectedPeople, setSelectedPeople] = useState('Все народы')
   const [availableRegions, setAvailableRegions] = useState<Region[]>(regions)
-  const [availablePublications, setAvailablePublications] = useState(publications)
   const [isPublishOpen, setIsPublishOpen] = useState(false)
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [language, setLanguage] = useState('RU')
-  const [route, setRoute] = useState(getRouteFromHash)
-  const [selectedEthnos, setSelectedEthnos] = useState('Марийцы')
-  const [ethnosRegionFilter, setEthnosRegionFilter] = useState<Region | null>(null)
+  const [location, setLocation] = useState<Location>(parseHash)
+
+  const route = location.route
+  const selectedEthnos = location.people ?? 'Марийцы'
+  const availablePublications = MATERIALS
+  // Фильтр по региону живёт в адресе, а не в состоянии: иначе он терялся бы при переходе в тему и при F5.
+  const ethnosRegionFilter = location.region
+    ? availableRegions.find((region) => region.id === location.region) ?? null
+    : null
 
   const selectRegion = (region: Region) => {
     setSelectedRegion(region)
     setSelectedPeople('Все народы')
+    // На странице региона выбор в боковом списке должен менять и адрес, иначе ссылка перестанет совпадать с экраном.
+    if (location.route === 'region') go({ ...HOME, route: 'region', region: region.id })
   }
 
   useEffect(() => {
-    const syncRoute = () => setRoute(getRouteFromHash())
+    const syncRoute = () => {
+      const next = parseHash()
+      setLocation(next)
+      if (next.region) {
+        const target = availableRegions.find((region) => region.id === next.region)
+        if (target) setSelectedRegion(target)
+      }
+    }
+    syncRoute()
     window.addEventListener('hashchange', syncRoute)
     return () => window.removeEventListener('hashchange', syncRoute)
-  }, [])
+  }, [availableRegions])
 
   useEffect(() => {
-    Promise.all([
-      fetch('/api/regions').then((response) => response.ok ? response.json() : Promise.reject()),
-      fetch('/api/stories').then((response) => response.ok ? response.json() : Promise.reject()),
-    ]).then(([loadedRegions, loadedStories]) => {
-      if (Array.isArray(loadedRegions) && loadedRegions.length > 0) setAvailableRegions(loadedRegions)
-      if (Array.isArray(loadedStories) && loadedStories.length > 0) setAvailablePublications(loadedStories)
-    }).catch(() => {
-      // The static demo data keeps the interface usable before the local API starts.
-    })
+    fetch('/api/regions')
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((loadedRegions) => {
+        if (Array.isArray(loadedRegions) && loadedRegions.length > 0) setAvailableRegions(loadedRegions)
+      })
+      .catch(() => {
+        // The static demo data keeps the interface usable before the local API starts.
+      })
   }, [])
 
-  const navigate = (nextRoute: string) => {
-    setRoute(nextRoute)
-    window.location.hash = nextRoute
+  const go = (next: Location) => {
+    setLocation(next)
     setIsMenuOpen(false)
+    window.location.hash = locationToHash(next)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
+  const navigate = (nextRoute: string) => {
+    if (nextRoute === 'region') return go({ ...HOME, route: 'region', region: selectedRegion.id })
+    go({ ...HOME, route: nextRoute })
+  }
+
   const openEthnos = (name: string, region: Region | null = null) => {
-    setSelectedEthnos(name)
-    setEthnosRegionFilter(region)
-    navigate('people')
+    go({ ...HOME, route: 'people', people: name, region: region?.id ?? null })
+  }
+
+  const openTopic = (peopleName: string | null, topicSlug: string, regionId: string | null = null) => {
+    go({ ...HOME, route: 'topic', people: peopleName, topic: topicSlug, region: regionId })
+  }
+
+  const openMaterial = (material: Material) => {
+    go({ ...HOME, route: 'material', people: material.people, topic: material.topic, material: material.slug })
   }
 
   const setEthnosRegion = (region: Region) => {
     setSelectedRegion(region)
-    setEthnosRegionFilter(region)
+    go({ ...location, region: region.id })
   }
 
   return (
@@ -292,7 +346,7 @@ function App() {
             <div className="panel-topline"><span>Выбрано на карте</span><Compass size={18} /></div>
             <h3>{selectedRegion.name}</h3>
             <p>{selectedRegion.description}</p>
-            <div className="region-stat"><b>{selectedRegion.materials}</b><span>публикации<br />в регионе</span></div>
+            <div className="region-stat"><b>{countForRegion(selectedRegion.name)}</b><span>публикации<br />в регионе</span></div>
             <div className="people-list">
               <span className="list-label">Представленные народы</span>
               {selectedRegion.peoples.map((person) => (
@@ -303,7 +357,7 @@ function App() {
                 >
                   <i className={`tone-${person.tone}`} />
                   <span>{person.name}</span>
-                  <b>{person.count}</b>
+                  <b>{countForPeople(person.name, selectedRegion.name)}</b>
                   <ArrowRight size={15} />
                 </button>
               ))}
@@ -355,12 +409,14 @@ function App() {
           <button className="text-button">Смотреть все <ArrowRight size={17} /></button>
         </div>
         <div className="publication-grid">
-          {availablePublications
-            .filter((item) => selectedPeople === 'Все народы' || item.people === selectedPeople)
+          {(selectedPeople === 'Все народы'
+            // На главной показываем по одному материалу от каждого народа, иначе витрина выглядит однообразно.
+            ? PEOPLES.map((people) => availablePublications.find((item) => item.people === people.name)).filter((item): item is Material => Boolean(item))
+            : availablePublications.filter((item) => item.people === selectedPeople).slice(0, 6))
             .map((item) => (
-              <article className="publication-card clickable-card" key={item.title} onClick={() => navigate('material')}>
+              <article className="publication-card clickable-card" key={item.slug} onClick={() => openMaterial(item)}>
                 <div className={`publication-image image-${item.image}`}>
-                  <span className={`ethnos-tag tag-${item.color}`}>{item.people} · {item.selfName}</span>
+                  <span className={`ethnos-tag tag-${peopleByName(item.people)?.tone ?? 'mari'}`}>{item.people} · {peopleByName(item.people)?.selfName ?? ''}</span>
                   <span className="media-tag"><Image size={14} /> {item.type}</span>
                 </div>
                 <div className="publication-body">
@@ -378,13 +434,13 @@ function App() {
           <p className="kicker">Исследуйте по-своему</p>
           <h2>Найдите нить, за которой хочется идти</h2>
           <p>Выбирайте тему, слушайте голоса, собирайте материалы в личные коллекции и создавайте своё портфолио.</p>
-          <button className="dark-button">Все темы <ArrowRight size={17} /></button>
+          <button className="dark-button" onClick={() => navigate('peoples')}>Все темы <ArrowRight size={17} /></button>
         </div>
         <div className="theme-grid">
-          {themes.map(([name, count, theme]) => (
-            <button className={`theme-tile tile-${theme}`} key={name}>
-              <span>{count}</span>
-              <strong>{name}</strong>
+          {TOPICS.slice(0, 4).map((topic) => (
+            <button className={`theme-tile ${topic.tone}`} key={topic.slug} onClick={() => openTopic(null, topic.slug)}>
+              <span>{materialsWord(countForTopic(topic.slug))}</span>
+              <strong>{topic.title}</strong>
               <ArrowRight size={18} />
             </button>
           ))}
@@ -404,7 +460,7 @@ function App() {
         </div>
       </section>
 
-      </> : <CorePages route={route} selectedRegion={selectedRegion} selectedEthnos={selectedEthnos} ethnosRegionFilter={ethnosRegionFilter} availableRegions={availableRegions} availablePublications={availablePublications} onNavigate={navigate} onSelectRegion={selectRegion} onOpenEthnos={openEthnos} onSetEthnosRegion={setEthnosRegion} onClearEthnosRegion={() => setEthnosRegionFilter(null)} />}
+      </> : <CorePages route={route} location={location} selectedRegion={selectedRegion} selectedEthnos={selectedEthnos} ethnosRegionFilter={ethnosRegionFilter} availableRegions={availableRegions} availablePublications={availablePublications} onNavigate={navigate} onSelectRegion={selectRegion} onOpenEthnos={openEthnos} onOpenTopic={openTopic} onOpenMaterial={openMaterial} onSetEthnosRegion={setEthnosRegion} onClearEthnosRegion={() => go({ ...location, region: null })} />}
 
       <footer>
         <div className="brand footer-brand"><span className="brand-mark"><i /><i /><i /><i /></span><span>этносфера</span></div>
@@ -522,6 +578,7 @@ function RegionFilter({
 
 function CorePages({
   route,
+  location,
   selectedRegion,
   selectedEthnos,
   ethnosRegionFilter,
@@ -530,18 +587,23 @@ function CorePages({
   onNavigate,
   onSelectRegion,
   onOpenEthnos,
+  onOpenTopic,
+  onOpenMaterial,
   onSetEthnosRegion,
   onClearEthnosRegion,
 }: {
   route: string
+  location: Location
   selectedRegion: Region
   selectedEthnos: string
   ethnosRegionFilter: Region | null
   availableRegions: Region[]
-  availablePublications: typeof publications
+  availablePublications: Material[]
   onNavigate: (route: string) => void
   onSelectRegion: (region: Region) => void
   onOpenEthnos: (name: string, region?: Region | null) => void
+  onOpenTopic: (peopleName: string | null, topicSlug: string, regionId?: string | null) => void
+  onOpenMaterial: (material: Material) => void
   onSetEthnosRegion: (region: Region) => void
   onClearEthnosRegion: () => void
 }) {
@@ -560,17 +622,10 @@ function CorePages({
           <div className="filter-note"><Sparkles size={17} /> Выберите народ, чтобы увидеть материалы из всех регионов России.</div>
         </aside>
         <div className="ethnos-directory">
-          {[
-            ['Марийцы', 'марий', 'Финно-угорская группа', '432 материала', 'mari'],
-            ['Татары', 'tatarlar', 'Тюркская группа', '318 материалов', 'tatar'],
-            ['Чуваши', 'чăваш', 'Тюркская группа', '215 материалов', 'chuvash'],
-            ['Удмурты', 'удмурт', 'Финно-угорская группа', '121 материал', 'udmurt'],
-            ['Башкиры', 'башкорт', 'Тюркская группа', '97 материалов', 'bashkir'],
-            ['Русские', 'русские', 'Славянская группа', '184 материала', 'russian'],
-          ].map(([name, selfName, group, count, tone]) => <button className="directory-card" key={name} onClick={() => onOpenEthnos(name)}>
-            <span className={`directory-pattern pattern-${tone}`}><i /><i /><i /><i /></span>
-            <div><small>{selfName}</small><h2>{name}</h2><p>{group}</p></div>
-            <span className="directory-count">{count}</span><ArrowRight size={18} />
+          {PEOPLES.map((people) => <button className="directory-card" key={people.slug} onClick={() => onOpenEthnos(people.name)}>
+            <span className={`directory-pattern pattern-${people.tone}`}><i /><i /><i /><i /></span>
+            <div><small>{people.selfName}</small><h2>{people.name}</h2><p>{people.group}</p></div>
+            <span className="directory-count">{materialsWord(countForPeople(people.name))}</span><ArrowRight size={18} />
           </button>)}
         </div>
       </div>
@@ -578,32 +633,18 @@ function CorePages({
   }
 
   if (route === 'people') {
-    const ethnos = {
-      Марийцы: { selfName: 'марий', tone: 'mari', count: '432', description: 'Материалы о языке, песнях, семейной памяти, ремёслах и повседневной культуре народа мари.', regions: 'Республика Марий Эл, Татарстан, Башкортостан, Кировская область' },
-      Татары: { selfName: 'tatarlar', tone: 'tatar', count: '318', description: 'Материалы о языке, городских и сельских традициях, музыке, кухне и семейной истории татар.', regions: 'Республика Татарстан, Республика Марий Эл, Башкортостан, Удмуртия' },
-      Чуваши: { selfName: 'чăваш', tone: 'chuvash', count: '215', description: 'Материалы об орнаментах, обрядах, песнях, ремёслах и истории чувашских семей.', regions: 'Чувашская Республика, Республика Марий Эл, Татарстан' },
-      Удмурты: { selfName: 'удмурт', tone: 'udmurt', count: '121', description: 'Песни, архивные фотографии, семейные рассказы и традиции удмуртской культуры.', regions: 'Удмуртская Республика, Татарстан, Пермский край' },
-      Башкиры: { selfName: 'башкорт', tone: 'bashkir', count: '97', description: 'Истории о башкирском языке, музыке, природопользовании и семейных архивах.', regions: 'Республика Башкортостан, Республика Татарстан, Оренбургская область' },
-      Русские: { selfName: 'русские', tone: 'russian', count: '184', description: 'Документы, фотографии, устные истории и локальные традиции русских семей.', regions: 'Все регионы России' },
-    }[selectedEthnos] ?? { selfName: 'народ', tone: 'mari', count: '0', description: 'Материалы выбранного народа.', regions: 'Россия' }
+    const ethnos = peopleByName(selectedEthnos)
+      ?? { selfName: 'народ', tone: 'mari', count: '0', description: 'Материалы выбранного народа.', regions: 'Россия' }
 
-    const topicCards = [
-      ['Язык и слово', 'Слова, диалекты, тексты и переводы', 'topic-language'],
-      ['Песни и музыка', 'Записи, мелодии, исполнители', 'topic-music'],
-      ['Семейная память', 'Интервью, фото и домашние архивы', 'topic-family'],
-      ['Фольклор', 'Сказки, предания и обряды', 'topic-folklore'],
-      ['Ремёсла и орнаменты', 'Узоры, вещи и мастерские', 'topic-craft'],
-      ['Кухня и быт', 'Рецепты, предметы и повседневность', 'topic-home'],
-      ['Природа и места', 'Маршруты, растения и ландшафты', 'topic-nature'],
-      ['Люди и события', 'Биографии и история сообществ', 'topic-people'],
-    ]
-
-    const materialCount = ethnosRegionFilter
-      ? ethnosRegionFilter.peoples.find((person) => person.name === selectedEthnos)?.count ?? 0
-      : ethnos.count
+    const materialCount = countForPeople(selectedEthnos, ethnosRegionFilter?.name ?? null)
 
     return <section className="inner-page ethnos-page">
-      <div className="breadcrumbs"><button onClick={() => onNavigate('peoples')}>Народы</button><span>/</span><span>{selectedEthnos}</span></div>
+      <div className="breadcrumbs">
+        <button onClick={() => onNavigate('peoples')}>Народы</button><span>/</span>
+        {ethnosRegionFilter
+          ? <><button onClick={onClearEthnosRegion}>{selectedEthnos}</button><span>/</span><span>{shortRegion(ethnosRegionFilter.name)}</span></>
+          : <span>{selectedEthnos}</span>}
+      </div>
       <div className={`ethnos-hero ethnos-${ethnos.tone}`}>
         <div className="ethnos-hero-pattern"><i /><i /><i /><i /><i /></div>
         <div className="ethnos-hero-copy"><span>{selectedEthnos.toUpperCase()} · {ethnos.selfName.toUpperCase()}</span><h1>{selectedEthnos}</h1><p>{ethnosRegionFilter ? `Истории народа «${selectedEthnos}», связанные с регионом «${ethnosRegionFilter.name}».` : ethnos.description}</p></div>
@@ -611,8 +652,47 @@ function CorePages({
       </div>
       <div className="ethnos-filterbar"><span>Регион:</span><RegionFilter region={ethnosRegionFilter} availableRegions={availableRegions} onSelect={onSetEthnosRegion} onClear={onClearEthnosRegion} /></div>
       <div className="ethnos-topic-heading"><div><p className="kicker">Выберите тему</p><h2>С чего начнём знакомство?</h2></div><p>{ethnosRegionFilter ? `Тема покажет истории о ${selectedEthnos.toLowerCase()} в регионе «${ethnosRegionFilter.name}».` : `Тема покажет все публикации о ${selectedEthnos.toLowerCase()} из разных регионов.`}</p></div>
-      <div className="ethnos-topic-grid">{topicCards.map(([title, description, tone]) => <button className={tone} key={title} onClick={() => onNavigate('material')}><span>{description}</span><strong>{title}</strong><ArrowRight size={19} /></button>)}</div>
+      <div className="ethnos-topic-grid">{TOPICS.map((topic) => <button className={topic.tone} key={topic.slug} onClick={() => onOpenTopic(selectedEthnos, topic.slug, ethnosRegionFilter?.id ?? null)}><span>{topic.description}<i className="topic-count">{materialsWord(countForTopic(topic.slug, selectedEthnos, ethnosRegionFilter?.name ?? null))}</i></span><strong>{topic.title}</strong><ArrowRight size={19} /></button>)}</div>
       <div className="ethnos-bottom"><div><p className="kicker">На карте</p><h2>Где живут эти истории</h2><p>{ethnos.regions}</p></div><button className="outline-button" onClick={() => onNavigate('region')}><Map size={16} /> Смотреть регионы на карте</button></div>
+    </section>
+  }
+
+  if (route === 'topic') {
+    const topic = topicBySlug(location.topic ?? TOPICS[0].slug)
+    const peopleName = location.people
+    const regionName = ethnosRegionFilter?.name ?? null
+    const items = materialsFor(peopleName, topic.slug, regionName)
+    const everywhere = materialsFor(peopleName, topic.slug).length
+
+    return <section className="inner-page topic-page">
+      <div className="breadcrumbs">
+        <button onClick={() => onNavigate('peoples')}>Народы</button>
+        {peopleName && <><span>/</span><button onClick={() => onOpenEthnos(peopleName, ethnosRegionFilter)}>{peopleName}</button></>}
+        {ethnosRegionFilter && <><span>/</span><button onClick={() => peopleName ? onOpenEthnos(peopleName, ethnosRegionFilter) : onNavigate('region')}>{shortRegion(ethnosRegionFilter.name)}</button></>}
+        <span>/</span><span>{topic.title}</span>
+      </div>
+      <div className={`topic-hero ${topic.tone}`}>
+        <div><span>{peopleName ? peopleName.toUpperCase() : 'ВСЕ НАРОДЫ'}{regionName ? ` · ${regionName.toUpperCase()}` : ''}</span><h1>{topic.title}</h1><p>{topic.description}</p></div>
+        <div className="topic-hero-stat"><b>{items.length}</b><span>{items.length === 1 ? 'материал' : 'материалов'}<br />{regionName ? 'в этом регионе' : 'в этой теме'}</span></div>
+      </div>
+      <div className="ethnos-filterbar">
+        <span>Регион:</span>
+        <RegionFilter region={ethnosRegionFilter} availableRegions={availableRegions} onSelect={onSetEthnosRegion} onClear={onClearEthnosRegion} />
+        <span className="filter-hint">{regionName
+          ? `${materialsWord(items.length)} в этом регионе из ${everywhere} у народа «${peopleName}»`
+          : 'Выберите регион, чтобы увидеть истории этого народа в конкретной республике'}</span>
+      </div>
+      <div className="region-subheading materials-heading">
+        <div><p className="kicker">Материалы темы</p><h2>{peopleName ? `${topic.title}: ${peopleName.toLowerCase()}` : 'Из разных культур'}</h2></div>
+        {peopleName && <button className="text-button" onClick={() => onOpenTopic(null, topic.slug)}>Все народы <ArrowRight size={17} /></button>}
+      </div>
+      {items.length > 0
+        ? <div className="compact-publications">{items.map((item) => <button key={item.slug} onClick={() => onOpenMaterial(item)}><span className={`compact-image image-${item.image}`} /><span><small>{item.people} · {item.type}</small><strong>{item.title}</strong><em>{item.author} · {item.region}</em></span><ArrowRight size={17} /></button>)}</div>
+        : <div className="empty-note">
+            <Sparkles size={18} />
+            <span>{regionName ? `В регионе «${regionName}» по этой теме пока нет материалов.` : 'В этой теме пока нет опубликованных материалов. Вы можете стать первым автором.'}</span>
+            {regionName && everywhere > 0 && <button className="outline-button" onClick={() => onOpenTopic(peopleName, topic.slug, null)}>Смотреть во всех регионах ({everywhere})</button>}
+          </div>}
     </section>
   }
 
@@ -621,42 +701,55 @@ function CorePages({
       <div className="breadcrumbs"><button onClick={() => onNavigate('home')}>Карта</button><span>/</span><span>{selectedRegion.name}</span></div>
       <div className="region-hero">
         <div><p className="kicker">География материалов</p><h1>{selectedRegion.name}</h1><p>{selectedRegion.description}</p></div>
-        <div className="region-hero-stat"><b>{selectedRegion.materials}</b><span>историй, опубликованных<br />в этом регионе</span></div>
+        <div className="region-hero-stat"><b>{countForRegion(selectedRegion.name)}</b><span>историй, опубликованных<br />в этом регионе</span></div>
       </div>
       <div className="region-content">
         <aside className="region-switcher"><span>Регионы на карте</span>{availableRegions.map((region) => <button className={region.id === selectedRegion.id ? 'selected' : ''} onClick={() => onSelectRegion(region)} key={region.id}><MapPin size={15} />{region.name.replace('Республика ', '')}</button>)}</aside>
         <div>
           <div className="region-subheading"><div><p className="kicker">Культуры региона</p><h2>Про кого рассказывает этот регион</h2></div><button className="text-button" onClick={() => onNavigate('peoples')}>Все народы <ArrowRight size={17} /></button></div>
-          <div className="region-people-grid">{selectedRegion.peoples.map((person) => <button onClick={() => onOpenEthnos(person.name, selectedRegion)} key={person.name}><i className={`tone-${person.tone}`} /><span>{person.name}</span><b>{person.count}</b><ArrowRight size={16} /></button>)}</div>
+          <div className="region-people-grid">{selectedRegion.peoples.map((person) => <button onClick={() => onOpenEthnos(person.name, selectedRegion)} key={person.name}><i className={`tone-${person.tone}`} /><span>{person.name}</span><b>{countForPeople(person.name, selectedRegion.name)}</b><ArrowRight size={16} /></button>)}</div>
           <div className="region-subheading materials-heading"><div><p className="kicker">Новое в регионе</p><h2>Истории жителей</h2></div><button className="filter-pill"><Filter size={15} /> Фильтры</button></div>
-          <div className="compact-publications">{availablePublications.filter((item) => item.region === selectedRegion.name).map((item) => <button key={item.title} onClick={() => onNavigate('material')}><span className={`compact-image image-${item.image}`} /><span><small>{item.people} · {item.type}</small><strong>{item.title}</strong><em>{item.author}</em></span><ArrowRight size={17} /></button>)}</div>
+          <div className="compact-publications">{availablePublications.filter((item) => item.region === selectedRegion.name).slice(0, 8).map((item) => <button key={item.slug} onClick={() => onOpenMaterial(item)}><span className={`compact-image image-${item.image}`} /><span><small>{item.people} · {item.type}</small><strong>{item.title}</strong><em>{item.author}</em></span><ArrowRight size={17} /></button>)}</div>
         </div>
       </div>
     </section>
   }
 
   if (route === 'material') {
-    const materialEthnos = {
-      Марийцы: { selfName: 'марий', tone: 'mari' },
-      Татары: { selfName: 'tatarlar', tone: 'tatar' },
-      Чуваши: { selfName: 'чăваш', tone: 'chuvash' },
-      Удмурты: { selfName: 'удмурт', tone: 'udmurt' },
-      Башкиры: { selfName: 'башкорт', tone: 'bashkir' },
-      Русские: { selfName: 'русские', tone: 'russian' },
-    }[selectedEthnos] ?? { selfName: 'народ', tone: 'mari' }
-    const materialRegion = ethnosRegionFilter?.name ?? 'Республика Марий Эл'
+    const material = MATERIALS.find((item) => item.slug === location.material) ?? MATERIALS[0]
+    const materialEthnos = peopleByName(material.people) ?? { selfName: 'народ', tone: 'mari' }
+    const topic = topicBySlug(material.topic)
+    const materialRegion = availableRegions.find((region) => region.name === material.region) ?? null
+    // «Читайте дальше» держится того же региона, иначе из материала о Марий Эл уводило бы в другой край.
+    const related = materialsFor(material.people, null, material.region).filter((item) => item.slug !== material.slug).slice(0, 3)
 
     return <section className="inner-page material-page">
-      <div className="breadcrumbs"><button onClick={() => onNavigate('home')}>ЭтноСфера</button><span>/</span><button onClick={() => onNavigate('region')}>Республика Марий Эл</button><span>/</span><span>Публикация</span></div>
+      <div className="breadcrumbs">
+        <button onClick={() => onNavigate('peoples')}>Народы</button><span>/</span>
+        <button onClick={() => onOpenEthnos(material.people, materialRegion)}>{material.people}</button><span>/</span>
+        {materialRegion && <><button onClick={() => onOpenEthnos(material.people, materialRegion)}>{shortRegion(materialRegion.name)}</button><span>/</span></>}
+        <button onClick={() => onOpenTopic(material.people, topic.slug, materialRegion?.id ?? null)}>{topic.title}</button><span>/</span>
+        <span>{material.title}</span>
+      </div>
       <div className="material-head">
-        <div><div className="material-tags"><span className={`ethnos-tag tag-${materialEthnos.tone}`}>{selectedEthnos} · {materialEthnos.selfName}</span><span className="soft-tag"><MapPin size={12} /> {materialRegion}</span><span className="soft-tag">Семейная память</span></div><h1>Песни, которые пели у печи</h1><p>Аудиозаписи и воспоминания о песнях, которые в семье Кузнецовых передавали от поколения к поколению.</p></div>
-        <div className="author-box"><span className="avatar">АП</span><div><small>Опубликовала</small><strong>Алина П.</strong><span>12 апреля 2026</span></div><button aria-label="Сохранить"><Heart size={18} /></button></div>
+        <div><div className="material-tags"><span className={`ethnos-tag tag-${materialEthnos.tone}`}>{material.people} · {materialEthnos.selfName}</span><span className="soft-tag"><MapPin size={12} /> {material.region}</span><span className="soft-tag">{topic.title}</span></div><h1>{material.title}</h1><p>{material.intro}</p></div>
+        <div className="author-box"><span className="avatar">{material.authorInitials}</span><div><small>Опубликовал</small><strong>{material.author}</strong><span>{material.date}</span></div><button aria-label="Сохранить"><Heart size={18} /></button></div>
       </div>
-      <div className="material-gallery"><div className="material-photo photo-main"><span>01</span></div><div className="material-photo photo-detail"><span>02</span></div><div className="material-photo photo-landscape"><span>03</span></div></div>
+      <div className="material-gallery"><div className={`material-photo photo-main image-${material.image}`}><span>01</span></div><div className="material-photo photo-detail"><span>02</span></div><div className="material-photo photo-landscape"><span>03</span></div></div>
       <div className="material-layout">
-        <article className="material-story"><p className="lead">«Когда печь затопят, бабушка садилась у окна и тихо начинала петь. Мы не всегда понимали слова, но знали, что это важно».</p><p>Эти записи были сделаны зимой 2025 года в Верх-Ушнуре. Я попросила бабушку вспомнить песни, которые она слышала в детстве. Часть из них исполнялась на марийском языке, часть - на русском, и в этом смешении хорошо слышна история нашей семьи.</p><h2>Как собирался материал</h2><p>Мы записывали разговоры на телефон, затем вместе переслушивали их и подписывали старые фотографии. Самой ценной стала короткая песня о дороге домой: бабушка вспомнила только два куплета, но узнала мотив на старой кассете.</p><div className="quote-note"><BookOpen size={19} /><span>Источник: личная беседа с Валентиной Кузнецовой, 2025 год. Семейный архив автора.</span></div></article>
-        <aside className="material-aside"><div className="audio-card"><span className="audio-label">Аудиозапись</span><button><Play size={18} fill="currentColor" /></button><strong>Колыбельная, фрагмент</strong><small>02:38 · марийский язык</small><div className="wave" /></div><div className="material-meta"><span><MapPin size={16} /> Верх-Ушнур, {materialRegion}</span><span><Languages size={16} /> Марийский, русский</span><span><FileText size={16} /> Устная история</span></div><button className="download-button"><Download size={16} /> Скачать материалы</button></aside>
+        <article className="material-story"><p className="lead">{material.lead}</p><p>{material.intro}</p><h2>Как собирался материал</h2><p>{material.collected}</p><div className="quote-note"><BookOpen size={19} /><span>Источник: {material.source}</span></div></article>
+        <aside className="material-aside">
+          {material.audio
+            ? <div className="audio-card"><span className="audio-label">Аудиозапись</span><button><Play size={18} fill="currentColor" /></button><strong>{material.audio.title}</strong><small>{material.audio.duration}</small><div className="wave" /></div>
+            : <div className="files-card"><span className="audio-label">Прикреплённые файлы</span><span className="file-row"><FileText size={16} /> Расшифровка.docx <small>830 КБ</small></span><span className="file-row"><FileText size={16} /> Опись материалов.pdf <small>1,4 МБ</small></span></div>}
+          <div className="material-meta"><span><MapPin size={16} /> {material.place}</span><span><Languages size={16} /> {material.languages}</span><span><FileText size={16} /> {material.type}</span></div>
+          <button className="download-button"><Download size={16} /> Скачать материалы</button>
+        </aside>
       </div>
+      {related.length > 0 && <div className="material-related">
+        <div className="region-subheading"><div><p className="kicker">Читайте дальше</p><h2>Ещё о народе «{material.people}» в {regionInPrepositional(material.region)}</h2></div><button className="text-button" onClick={() => onOpenEthnos(material.people, materialRegion)}>Все темы <ArrowRight size={17} /></button></div>
+        <div className="compact-publications">{related.map((item) => <button key={item.slug} onClick={() => onOpenMaterial(item)}><span className={`compact-image image-${item.image}`} /><span><small>{topicBySlug(item.topic).title} · {item.type}</small><strong>{item.title}</strong><em>{item.author}</em></span><ArrowRight size={17} /></button>)}</div>
+      </div>}
     </section>
   }
 
@@ -665,7 +758,7 @@ function CorePages({
       <div className="page-intro split-intro"><div><p className="kicker">Подборки пользователей</p><h1>Коллекции</h1><p>Сохраняйте чужие публикации в личные тематические подборки или открывайте свои находки для всех.</p></div><button className="publish-button"><FolderHeart size={16} /> Создать коллекцию</button></div>
       <div className="collection-feature"><div className="collection-art"><span>12</span><i /><i /><i /></div><div><p className="kicker">Коллекция недели</p><h2>Память о доме</h2><p>Семейные фотографии, письма и голоса из разных уголков Марий Эл. Подборка, которую собирают участники из пяти населённых пунктов.</p><div className="collection-by"><span className="avatar">МС</span> Собрала Мария С. · 12 материалов</div><button className="dark-button">Открыть коллекцию <ArrowRight size={17} /></button></div></div>
       <div className="section-heading collection-title"><div><p className="kicker">Открытые подборки</p><h2>Собрано людьми</h2></div><button className="text-button">Все коллекции <ArrowRight size={17} /></button></div>
-      <div className="collection-grid">{[['Голоса детства', 'Аудио и устные истории', '18 материалов', 'coll-voice'], ['Узоры Поволжья', 'Орнаменты и ремёсла', '24 материала', 'coll-pattern'], ['Дороги семьи', 'Люди и населённые пункты', '9 материалов', 'coll-roads']].map(([name, description, count, tone]) => <article className="collection-card" key={name}><div className={`collection-cover ${tone}`}><i /><i /><i /></div><p>{description}</p><h3>{name}</h3><div><span>{count}</span><button onClick={() => onNavigate('material')}><ArrowRight size={17} /></button></div></article>)}</div>
+      <div className="collection-grid">{[['Голоса детства', 'Аудио и устные истории', '18 материалов', 'coll-voice', 'pesni-kotorye-peli-u-pechi'], ['Узоры Поволжья', 'Орнаменты и ремёсла', '24 материала', 'coll-pattern', 'ornament-na-polotence-babushki'], ['Дороги семьи', 'Люди и населённые пункты', '9 материалов', 'coll-roads', 'istoriya-starogo-doma']].map(([name, description, count, tone, slug]) => <article className="collection-card" key={name}><div className={`collection-cover ${tone}`}><i /><i /><i /></div><p>{description}</p><h3>{name}</h3><div><span>{count}</span><button onClick={() => onOpenMaterial(materialBySlug(slug))} aria-label={`Открыть коллекцию «${name}»`}><ArrowRight size={17} /></button></div></article>)}</div>
     </section>
   }
 
@@ -673,7 +766,7 @@ function CorePages({
     <div className="profile-cover"><span className="profile-pattern"><i /><i /><i /><i /></span></div>
     <div className="profile-summary"><span className="profile-avatar">АП</span><div><p className="kicker">Личный кабинет</p><h1>Алина Петрова</h1><p>Собираю семейные истории и материалы о марийской культуре.</p></div><button className="outline-button"><UserRound size={16} /> Редактировать профиль</button></div>
     <div className="profile-tabs"><button className="active">Портфолио</button><button>Мои публикации <span>7</span></button><button>Коллекции <span>3</span></button></div>
-    <div className="portfolio-layout"><div><div className="section-heading compact"><div><p className="kicker">Избранные работы</p><h2>Моё портфолио</h2></div><button className="download-button"><Download size={16} /> Скачать PDF</button></div><div className="portfolio-list">{[['Песни, которые пели у печи', 'Устная история · Аудио', 'Марийцы'], ['Орнамент на полотенце бабушки', 'Семейный архив · Фото', 'Чуваши'], ['История старого дома', 'Исследовательская работа · Текст', 'Русские']].map(([title, kind, people], index) => <button key={title} onClick={() => onNavigate('material')}><b>0{index + 1}</b><span><strong>{title}</strong><small>{kind}</small></span><em>{people}</em><ArrowRight size={17} /></button>)}</div></div><aside className="portfolio-side"><span className="side-label">В портфолио</span><b>7</b><span>опубликованных<br />материалов</span><hr /><span className="side-label">Темы</span><p>Семейная память<br />Музыка и песни<br />Язык и слово</p></aside></div>
+    <div className="portfolio-layout"><div><div className="section-heading compact"><div><p className="kicker">Избранные работы</p><h2>Моё портфолио</h2></div><button className="download-button"><Download size={16} /> Скачать PDF</button></div><div className="portfolio-list">{['pesni-kotorye-peli-u-pechi', 'ornament-na-polotence-babushki', 'istoriya-starogo-doma'].map(materialBySlug).map((item, index) => <button key={item.slug} onClick={() => onOpenMaterial(item)}><b>0{index + 1}</b><span><strong>{item.title}</strong><small>{topicBySlug(item.topic).title} · {item.type}</small></span><em>{item.people}</em><ArrowRight size={17} /></button>)}</div></div><aside className="portfolio-side"><span className="side-label">В портфолио</span><b>7</b><span>опубликованных<br />материалов</span><hr /><span className="side-label">Темы</span><p>Семейная память<br />Музыка и песни<br />Язык и слово</p></aside></div>
   </section>
 }
 
@@ -730,10 +823,10 @@ function PublishModal({ onClose }: { onClose: () => void }) {
           </div>
         </div>}
         {step === 2 && <div className="modal-content form-grid">
-          <SearchSelect label="Связанный народ" placeholder="Введите народ" options={['Марийцы', 'Татары', 'Чуваши', 'Русские', 'Удмурты', 'Башкиры']} />
+          <SearchSelect label="Связанный народ" placeholder="Введите народ" options={PEOPLES.map((people) => people.name)} />
           <SearchSelect label="Регион" placeholder="Введите регион" options={['Республика Марий Эл', 'Республика Татарстан', 'Удмуртская Республика', 'Республика Башкортостан']} />
           <SearchSelect label="Язык" placeholder="Введите язык" options={['Русский', 'Марийский', 'Татарский', 'Чувашский', 'Удмуртский', 'Башкирский']} />
-          <SearchSelect label="Тема" placeholder="Введите тему" options={['Семейная память', 'Музыка и песни', 'Ремёсла и орнаменты', 'Язык и слово', 'Фольклор', 'Природа и этноботаника']} />
+          <SearchSelect label="Тема" placeholder="Введите тему" options={TOPICS.map((topic) => topic.title)} />
           <label className="full-width">Источник<textarea placeholder="Семейный архив, интервью, книга, музейный фонд..." /></label>
         </div>}
         {step === 3 && <div className="modal-content">
