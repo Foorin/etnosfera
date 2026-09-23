@@ -33,6 +33,8 @@ export type Material = {
   languages: string
   place: string
   image: string
+  // Сколько фотографий в галерее: 1, 2 или 3. Не указано — значит полные три.
+  photos?: number
   audio?: { title: string; duration: string }
 }
 
@@ -119,8 +121,8 @@ export const MATERIALS: Material[] = [
     topic: 'language',
     region: 'Республика Марий Эл',
     type: 'Устная история',
-    author: 'Ксения В.',
-    authorInitials: 'КВ',
+    author: 'Алина П.',
+    authorInitials: 'АП',
     date: '3 марта 2026',
     lead: '«Я привезла из деревни тетрадь на сорок слов. Половины из них нет ни в одном марийско-русском словаре».',
     intro: 'В Моркинском районе говорят иначе, чем в учебнике. Обычное «ведро» здесь звучит по-своему, а у инструментов и домашней утвари сохранились названия, которые не попали в литературную норму. Я записывала их два лета подряд, приезжая к родственникам.',
@@ -129,6 +131,7 @@ export const MATERIALS: Material[] = [
     languages: 'Марийский, русский',
     place: 'Морки, Республика Марий Эл',
     image: 'language',
+    photos: 2,
   },
   {
     slug: 'pesni-kotorye-peli-u-pechi',
@@ -166,6 +169,7 @@ export const MATERIALS: Material[] = [
     languages: 'Русский, марийский',
     place: 'Сернур, Республика Марий Эл',
     image: 'family',
+    photos: 1,
   },
   {
     slug: 'kugu-yumo-i-pervyy-dozhd',
@@ -211,8 +215,8 @@ export const MATERIALS: Material[] = [
     topic: 'home',
     region: 'Республика Марий Эл',
     type: 'Видеозапись',
-    author: 'Светлана Я.',
-    authorInitials: 'СЯ',
+    author: 'Алина П.',
+    authorInitials: 'АП',
     date: '14 февраля 2026',
     lead: '«Первый слой — ржаной, потом овсяный, потом крупа. Если перепутать, всё расползётся».',
     intro: 'Видеозапись приготовления команмелны от начала до подачи. Снимали на кухне обычного деревенского дома, без постановки: тесто месят в той же посуде, что и всегда, и половину действий делают молча.',
@@ -277,6 +281,7 @@ export const MATERIALS: Material[] = [
     languages: 'Татарский, русский',
     place: 'Казань, Республика Татарстан',
     image: 'language',
+    photos: 1,
   },
   {
     slug: 'garmon-na-svadbe-v-arske',
@@ -368,6 +373,7 @@ export const MATERIALS: Material[] = [
     languages: 'Татарский, русский',
     place: 'Казань, Республика Татарстан',
     image: 'home',
+    photos: 2,
   },
   {
     slug: 'rodnik-u-derevni-tashkichu',
@@ -386,6 +392,7 @@ export const MATERIALS: Material[] = [
     languages: 'Татарский, русский',
     place: 'Ташкичу, Республика Татарстан',
     image: 'nature',
+    photos: 2,
   },
   {
     slug: 'uchitel-kotoryy-vel-dnevnik-sela',
@@ -404,6 +411,7 @@ export const MATERIALS: Material[] = [
     languages: 'Татарский',
     place: 'Балтасинский район, Республика Татарстан',
     image: 'people',
+    photos: 1,
   },
 
   // ---------- Чуваши ----------
@@ -589,6 +597,7 @@ export const MATERIALS: Material[] = [
     languages: 'Удмуртский',
     place: 'Игринский район, Удмуртская Республика',
     image: 'music',
+    photos: 1,
     audio: { title: 'Протяжная, два варианта', duration: '08:23 · удмуртский язык' },
   },
   {
@@ -644,6 +653,7 @@ export const MATERIALS: Material[] = [
     languages: 'Удмуртский, русский',
     place: 'Можга, Удмуртская Республика',
     image: 'craft',
+    photos: 2,
   },
   {
     slug: 'perepechi-na-budniy-den',
@@ -662,6 +672,7 @@ export const MATERIALS: Material[] = [
     languages: 'Удмуртский, русский',
     place: 'Игра, Удмуртская Республика',
     image: 'home',
+    photos: 2,
   },
   {
     slug: 'travy-kotorye-sushat-na-cherdake',
@@ -680,6 +691,7 @@ export const MATERIALS: Material[] = [
     languages: 'Удмуртский, русский',
     place: 'Шаркан, Удмуртская Республика',
     image: 'nature',
+    photos: 2,
   },
   {
     slug: 'feldsher-na-odnu-okrugu',
@@ -845,6 +857,7 @@ export const MATERIALS: Material[] = [
     languages: 'Башкирский',
     place: 'Баймакский район, Республика Башкортостан',
     image: 'people',
+    photos: 1,
   },
 
   // ---------- Русские ----------
@@ -956,6 +969,7 @@ export const MATERIALS: Material[] = [
     languages: 'Русский',
     place: 'Медведевский район, Республика Марий Эл',
     image: 'home',
+    photos: 2,
   },
   {
     slug: 'reka-po-kotoroy-splavlyali-les',
@@ -974,6 +988,7 @@ export const MATERIALS: Material[] = [
     languages: 'Русский',
     place: 'Глазовский район, Удмуртская Республика',
     image: 'nature',
+    photos: 1,
   },
   {
     slug: 'istoriya-starogo-doma',
@@ -1084,6 +1099,7 @@ export const MATERIALS: Material[] = [
     languages: 'Русский',
     place: 'Суслонгер, Республика Марий Эл',
     image: 'people',
+    photos: 1,
   },
 
   // ---------- Республика Марий Эл · Татары ----------
@@ -1474,6 +1490,7 @@ export const MATERIALS: Material[] = [
     languages: 'Чувашский, русский',
     place: 'Нурлатский район, Республика Татарстан',
     image: 'family',
+    photos: 2,
   },
   {
     slug: 'poyas-kotoryy-tkut-na-doshchechkah',
@@ -1510,6 +1527,7 @@ export const MATERIALS: Material[] = [
     languages: 'Чувашский, русский',
     place: 'Нурлатский район, Республика Татарстан',
     image: 'nature',
+    photos: 2,
   },
   // ---------- Удмуртская Республика · Русские ----------
   {
@@ -1657,6 +1675,7 @@ export const MATERIALS: Material[] = [
     languages: 'Татарский',
     place: 'Юкаменский район, Удмуртская Республика',
     image: 'music',
+    photos: 1,
     audio: { title: 'Наигрыш трёх поколений', duration: '06:02 · гармонь' },
   },
   {
@@ -1912,6 +1931,7 @@ export const MATERIALS: Material[] = [
     languages: 'Татарский, русский',
     place: 'Абзелиловский район, Республика Башкортостан',
     image: 'people',
+    photos: 1,
   },
 
   // ---------- Республика Башкортостан · Русские ----------

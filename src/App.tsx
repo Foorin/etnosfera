@@ -29,9 +29,20 @@ import {
   UsersRound,
   Video,
   X,
+  LogOut,
+  Eye,
+  EyeOff,
+  Pencil,
+  Star,
 } from 'lucide-react'
 import { MATERIALS, PEOPLES, TOPICS, countForPeople, countForRegion, countForTopic, materialBySlug, materialsFor, peopleByName, topicBySlug } from './data/content'
 import type { Material } from './data/content'
+import { SearchSelect } from './SearchSelect'
+import { EditorPage } from './Editor'
+import { ProfileSettings } from './ProfileSettings'
+import { AddToCollectionModal, AuthModal, CollectionModal, SuccessNote } from './AccountModals'
+import { COLLECTION_COVERS, DEMO_ACCOUNT, DEMO_COLLECTIONS, DEMO_POSTS, EMPTY_POST, FEATURED_COLLECTION, PUBLIC_COLLECTIONS } from './data/account'
+import type { Account, UserCollection, UserPost } from './data/account'
 
 type Region = {
   id: string
@@ -99,7 +110,7 @@ const regions: Region[] = [
   },
 ]
 
-const routes = new Set(['home', 'peoples', 'people', 'region', 'topic', 'material', 'collections', 'profile'])
+const routes = new Set(['home', 'peoples', 'people', 'region', 'topic', 'material', 'collections', 'collection', 'profile', 'editor', 'settings'])
 
 type Location = {
   route: string
@@ -107,9 +118,10 @@ type Location = {
   topic: string | null
   material: string | null
   region: string | null
+  collection: string | null
 }
 
-const HOME: Location = { route: 'home', people: null, topic: null, material: null, region: null }
+const HOME: Location = { route: 'home', people: null, topic: null, material: null, region: null, collection: null }
 
 // Адрес хранится в хеше сегментами: #people/tatar, #topic/tatar/language, #material/<слаг>.
 // Благодаря этому у каждого материала есть своя ссылка, а обновление страницы не сбрасывает экран.
@@ -136,6 +148,8 @@ function parseHash(): Location {
     return { ...HOME, route, people: material.people, topic: material.topic, material: material.slug }
   }
   if (route === 'region') return { ...HOME, route, region: first ?? null }
+  if (route === 'collection') return { ...HOME, route, collection: first ?? null }
+  if (route === 'editor') return { ...HOME, route, material: first ?? null }
   return { ...HOME, route }
 }
 
@@ -170,6 +184,8 @@ function locationToHash(location: Location) {
   ].filter(Boolean).join('/')
   if (location.route === 'material') return `material/${location.material ?? ''}`
   if (location.route === 'region') return `region/${location.region ?? ''}`
+  if (location.route === 'collection') return `collection/${location.collection ?? ''}`
+  if (location.route === 'editor') return location.material ? `editor/${location.material}` : 'editor'
   return location.route
 }
 
@@ -177,7 +193,18 @@ function App() {
   const [selectedRegion, setSelectedRegion] = useState<Region>(regions[0])
   const [selectedPeople, setSelectedPeople] = useState('Все народы')
   const [availableRegions, setAvailableRegions] = useState<Region[]>(regions)
-  const [isPublishOpen, setIsPublishOpen] = useState(false)
+  // Материал, открытый в редакторе. Пустой id означает создание нового.
+  const [draft, setDraft] = useState<UserPost | null>(null)
+  // Кабинет смоделирован: аккаунт и созданное живут в памяти вкладки и исчезают при обновлении страницы.
+  const [account, setAccount] = useState<Account | null>(null)
+  const [isAuthOpen, setIsAuthOpen] = useState(false)
+  const [isCollectionOpen, setIsCollectionOpen] = useState(false)
+  const [editingCollection, setEditingCollection] = useState<UserCollection | null>(null)
+  const [collectingMaterial, setCollectingMaterial] = useState<Material | null>(null)
+  const [successNote, setSuccessNote] = useState<{ title: string; text: string } | null>(null)
+  const [myPosts, setMyPosts] = useState<UserPost[]>([])
+  const [myCollections, setMyCollections] = useState<UserCollection[]>([])
+  const [profileTab, setProfileTab] = useState<'portfolio' | 'posts' | 'collections'>('portfolio')
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [language, setLanguage] = useState('RU')
   const [location, setLocation] = useState<Location>(parseHash)
@@ -185,6 +212,9 @@ function App() {
   const route = location.route
   const selectedEthnos = location.people ?? 'Марийцы'
   const availablePublications = MATERIALS
+  // Свои коллекции идут первыми, чтобы только что созданная перекрывала одноимённую демонстрационную.
+  const allCollections = [...myCollections, ...PUBLIC_COLLECTIONS]
+    .filter((collection, index, list) => list.findIndex((item) => item.id === collection.id) === index)
   // Фильтр по региону живёт в адресе, а не в состоянии: иначе он терялся бы при переходе в тему и при F5.
   const ethnosRegionFilter = location.region
     ? availableRegions.find((region) => region.id === location.region) ?? null
@@ -242,6 +272,10 @@ function App() {
     go({ ...HOME, route: 'topic', people: peopleName, topic: topicSlug, region: regionId })
   }
 
+  const openCollection = (collection: UserCollection) => {
+    go({ ...HOME, route: 'collection', collection: collection.id })
+  }
+
   const openMaterial = (material: Material) => {
     go({ ...HOME, route: 'material', people: material.people, topic: material.topic, material: material.slug })
   }
@@ -249,6 +283,161 @@ function App() {
   const setEthnosRegion = (region: Region) => {
     setSelectedRegion(region)
     go({ ...location, region: region.id })
+  }
+
+  const signIn = (nextAccount: Account) => {
+    setAccount(nextAccount)
+    setIsAuthOpen(false)
+    // Новому автору кабинет показывается пустым, демо-аккаунту — с уже накопленными работами.
+    setMyPosts(nextAccount.isNew ? [] : DEMO_POSTS)
+    setMyCollections(nextAccount.isNew ? [] : DEMO_COLLECTIONS)
+    setProfileTab('portfolio')
+    go({ ...HOME, route: 'profile' })
+  }
+
+  const saveAccount = (updated: Account) => {
+    setAccount(updated)
+  }
+
+  const deleteAccount = () => {
+    setAccount(null)
+    setMyPosts([])
+    setMyCollections([])
+    navigate('home')
+    setSuccessNote({
+      title: 'Аккаунт удалён',
+      text: 'Профиль, черновики, коллекции и портфолио удалены. Опубликованные материалы остаются на сайте без привязки к автору.',
+    })
+  }
+
+  const signOut = () => {
+    setAccount(null)
+    setMyPosts([])
+    setMyCollections([])
+    navigate('home')
+  }
+
+  // Публиковать и открывать кабинет может только вошедший — иначе сначала предлагаем войти.
+  const withAccount = (action: () => void) => {
+    if (!account) {
+      setIsAuthOpen(true)
+      return
+    }
+    action()
+  }
+
+  const publishPost = (edited: UserPost) => {
+    const published: UserPost = {
+      ...edited,
+      id: edited.id || `post-${Date.now()}`,
+      status: 'На проверке',
+      date: new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }),
+    }
+    setMyPosts((current) => current.some((post) => post.id === published.id)
+      ? current.map((post) => post.id === published.id ? published : post)
+      : [published, ...current])
+    setDraft(null)
+    setProfileTab('posts')
+    go({ ...HOME, route: 'profile' })
+    setSuccessNote({
+      title: 'Материал отправлен',
+      text: 'Материал ушёл на проверку — он виден в разделе «Мои публикации» со статусом «На проверке». Как только проверка завершится, статус сменится на «Опубликован».',
+    })
+  }
+
+  const createCollection = (collection: UserCollection) => {
+    setMyCollections((current) => [collection, ...current])
+    setIsCollectionOpen(false)
+    setProfileTab('collections')
+    setSuccessNote({
+      title: 'Коллекция создана',
+      text: `Подборка «${collection.name}» появилась в кабинете. Добавляйте в неё материалы кнопкой «Добавить в коллекцию» на странице любой публикации.`,
+    })
+  }
+
+  const openEditor = (post: UserPost) => {
+    setDraft(post)
+    go({ ...HOME, route: 'editor', material: post.id || null })
+  }
+
+  const saveDraft = (updated: UserPost) => {
+    const saved = updated.id ? updated : { ...updated, id: `post-${Date.now()}` }
+    setMyPosts((current) => current.some((post) => post.id === saved.id)
+      ? current.map((post) => post.id === saved.id ? saved : post)
+      : [saved, ...current])
+    setDraft(null)
+    setProfileTab('posts')
+    go({ ...HOME, route: 'profile' })
+  }
+
+  const toggleInCollection = (collectionId: string, slug: string) => {
+    setMyCollections((current) => current.map((collection) => {
+      if (collection.id !== collectionId) return collection
+      const items = collection.items.includes(slug)
+        ? collection.items.filter((item) => item !== slug)
+        : [...collection.items, slug]
+      return { ...collection, items, count: items.length }
+    }))
+  }
+
+  const createCollectionWith = (name: string, slug: string) => {
+    setMyCollections((current) => [{
+      id: `coll-${Date.now()}`,
+      name,
+      description: 'Описание пока не добавлено',
+      count: 1,
+      access: 'Приватная',
+      cover: COLLECTION_COVERS[current.length % COLLECTION_COVERS.length],
+      author: account?.name ?? 'Автор',
+      authorInitials: account?.initials ?? 'ЭС',
+      items: [slug],
+    }, ...current])
+  }
+
+  const saveCollection = (collection: UserCollection) => {
+    setMyCollections((current) => current.map((item) => item.id === collection.id ? collection : item))
+    setEditingCollection(null)
+  }
+
+  const deleteCollection = (id: string) => {
+    const removed = myCollections.find((collection) => collection.id === id)
+    setMyCollections((current) => current.filter((collection) => collection.id !== id))
+    setEditingCollection(null)
+    setProfileTab('collections')
+    // После удаления возвращаемся в кабинет: страницы этой коллекции больше нет.
+    go({ ...HOME, route: 'profile' })
+    if (removed) setSuccessNote({ title: 'Коллекция удалена', text: `Подборка «${removed.name}» удалена. Материалы, которые в ней были, остались на сайте.` })
+  }
+
+  const saveCollectionToMine = (collection: UserCollection) => {
+    const already = myCollections.find((item) => item.savedFrom && item.name === collection.name)
+    if (already) {
+      setSuccessNote({ title: 'Уже сохранено', text: `Подборка «${collection.name}» уже лежит у вас в кабинете.` })
+      return
+    }
+    setMyCollections((current) => [{
+      ...collection,
+      id: `coll-${Date.now()}`,
+      access: 'Приватная',
+      savedFrom: collection.author,
+    }, ...current])
+    setProfileTab('collections')
+    setSuccessNote({
+      title: 'Подборка сохранена',
+      text: `«${collection.name}» добавлена в ваш кабинет. Автор оригинала — ${collection.author}, состав подборки сохранён целиком.`,
+    })
+  }
+
+  const togglePortfolio = (id: string) => {
+    setMyPosts((current) => current.map((post) => post.id === id
+      ? { ...post, inPortfolio: !post.inPortfolio }
+      : post))
+  }
+
+  const togglePostVisibility = (id: string) => {
+    setMyPosts((current) => current.map((post) => post.id === id
+      ? { ...post, status: post.status === 'Скрыт' ? 'Опубликован' : post.status === 'Опубликован' ? 'Скрыт' : post.status }
+      : post))
   }
 
   return (
@@ -262,15 +451,20 @@ function App() {
           <button className={route === 'home' ? 'active' : ''} onClick={() => navigate('home')}>Карта</button>
           <button className={route === 'peoples' || route === 'people' ? 'active' : ''} onClick={() => navigate('peoples')}>Народы</button>
           <button className={route === 'collections' ? 'active' : ''} onClick={() => navigate('collections')}>Коллекции</button>
-          <button className={route === 'profile' ? 'active' : ''} onClick={() => navigate('profile')}>Моё портфолио</button>
+          <button className={route === 'profile' ? 'active' : ''} onClick={() => withAccount(() => navigate('profile'))}>Моё портфолио</button>
         </nav>
         <div className="header-actions">
           <button className="language" onClick={() => setLanguage(language === 'RU' ? 'МАР' : 'RU')} aria-label="Сменить язык">
             <Languages size={16} /> {language}
           </button>
-          <button className="publish-button" onClick={() => setIsPublishOpen(true)}>
+          <button className="publish-button" onClick={() => withAccount(() => openEditor({ ...EMPTY_POST }))}>
             <Upload size={16} /> Добавить материал
           </button>
+          {account
+            ? <button className="account-avatar" onClick={() => navigate('profile')} aria-label={`Личный кабинет: ${account.name}`} title={account.name}>
+                {account.initials}
+              </button>
+            : <button className="signin-button" onClick={() => setIsAuthOpen(true)}>Войти</button>}
           <button className="menu-button" onClick={() => setIsMenuOpen(!isMenuOpen)} aria-label="Открыть меню">
             {isMenuOpen ? <X size={22} /> : <Menu size={22} />}
           </button>
@@ -454,13 +648,53 @@ function App() {
           <h2>Одна фотография может сохранить целую историю.</h2>
           <p>Загрузите семейный снимок, запись разговора или найденный документ. Укажите место, народ и источник - и ваша история станет частью живого атласа.</p>
           <div className="contribute-actions">
-            <button className="publish-button" onClick={() => setIsPublishOpen(true)}><Upload size={16} /> Добавить материал</button>
+            <button className="publish-button" onClick={() => withAccount(() => openEditor({ ...EMPTY_POST }))}><Upload size={16} /> Добавить материал</button>
             <a href="#collections">Как это работает <ArrowRight size={16} /></a>
           </div>
         </div>
       </section>
 
-      </> : <CorePages route={route} location={location} selectedRegion={selectedRegion} selectedEthnos={selectedEthnos} ethnosRegionFilter={ethnosRegionFilter} availableRegions={availableRegions} availablePublications={availablePublications} onNavigate={navigate} onSelectRegion={selectRegion} onOpenEthnos={openEthnos} onOpenTopic={openTopic} onOpenMaterial={openMaterial} onSetEthnosRegion={setEthnosRegion} onClearEthnosRegion={() => go({ ...location, region: null })} />}
+      </> : route === 'settings' && account ? <ProfileSettings
+        account={account}
+        postCount={myPosts.length}
+        collectionCount={myCollections.length}
+        onCancel={() => navigate('profile')}
+        onSave={saveAccount}
+        onDelete={deleteAccount}
+      /> : route === 'editor' && account ? <EditorPage
+        post={draft ?? myPosts.find((post) => post.id === location.material) ?? { ...EMPTY_POST }}
+        regionNames={availableRegions.map((region) => region.name)}
+        onCancel={() => { setDraft(null); navigate('profile') }}
+        onSaveDraft={saveDraft}
+        onPublish={publishPost}
+      /> : route === 'profile' && !account ? <section className="inner-page profile-page">
+        <div className="page-intro">
+          <p className="kicker">Личный кабинет</p>
+          <h1>Войдите, чтобы продолжить</h1>
+          <p>В кабинете хранятся ваши публикации, черновики, коллекции и портфолио. Карта, народы и материалы доступны и без входа.</p>
+        </div>
+        <div className="empty-note">
+          <Sparkles size={18} />
+          <span>Это демонстрационная версия: подойдёт любая почта и любой пароль.</span>
+          <button className="outline-button" onClick={() => setIsAuthOpen(true)}>Войти в кабинет</button>
+        </div>
+      </section> : route === 'profile' && account ? <ProfilePage
+        account={account}
+        posts={myPosts}
+        collections={myCollections}
+        tab={profileTab}
+        onTab={setProfileTab}
+        onOpenPublish={() => openEditor({ ...EMPTY_POST })}
+        onCreateCollection={() => setIsCollectionOpen(true)}
+        onTogglePost={togglePostVisibility}
+        onEditPost={openEditor}
+        onTogglePortfolio={togglePortfolio}
+        onOpenMaterial={openMaterial}
+        onOpenCollection={openCollection}
+        onEditCollection={setEditingCollection}
+        onOpenSettings={() => navigate('settings')}
+        onSignOut={signOut}
+      /> : <CorePages route={route} location={location} selectedRegion={selectedRegion} selectedEthnos={selectedEthnos} ethnosRegionFilter={ethnosRegionFilter} availableRegions={availableRegions} availablePublications={availablePublications} onNavigate={navigate} onSelectRegion={selectRegion} onOpenEthnos={openEthnos} onOpenTopic={openTopic} onOpenMaterial={openMaterial} onSetEthnosRegion={setEthnosRegion} onClearEthnosRegion={() => go({ ...location, region: null })} onCreateCollection={() => withAccount(() => setIsCollectionOpen(true))} collections={allCollections} onOpenCollection={openCollection} myCollections={myCollections} onSaveToCollection={(material) => withAccount(() => setCollectingMaterial(material))} onSaveCollection={(collection) => withAccount(() => saveCollectionToMine(collection))} onEditCollection={setEditingCollection} isMine={(collection) => myCollections.some((item) => item.id === collection.id)} />}
 
       <footer>
         <div className="brand footer-brand"><span className="brand-mark"><i /><i /><i /><i /></span><span>этносфера</span></div>
@@ -468,60 +702,27 @@ function App() {
         <span>Проект находится в разработке</span>
       </footer>
 
-      {isPublishOpen && <PublishModal onClose={() => setIsPublishOpen(false)} />}
+      {isAuthOpen && <AuthModal onClose={() => setIsAuthOpen(false)} onSignIn={signIn} />}
+      {isCollectionOpen && account && <CollectionModal account={account} onClose={() => setIsCollectionOpen(false)} onCreate={createCollection} />}
+      {editingCollection && account && <CollectionModal
+        account={account}
+        collection={editingCollection}
+        onClose={() => setEditingCollection(null)}
+        onCreate={saveCollection}
+        onDelete={deleteCollection}
+      />}
+      {collectingMaterial && account && <AddToCollectionModal
+        account={account}
+        title={collectingMaterial.title}
+        collections={myCollections}
+        inside={myCollections.filter((collection) => collection.items.includes(collectingMaterial.slug)).map((collection) => collection.id)}
+        onClose={() => setCollectingMaterial(null)}
+        onToggle={(collectionId) => toggleInCollection(collectionId, collectingMaterial.slug)}
+        onCreate={(name) => createCollectionWith(name, collectingMaterial.slug)}
+      />}
+      {successNote && <SuccessNote title={successNote.title} text={successNote.text} onClose={() => { setSuccessNote(null); navigate('profile') }} />}
     </main>
   )
-}
-
-function SearchSelect({
-  label,
-  options,
-  placeholder = 'Начните вводить',
-  className = '',
-}: {
-  label: string
-  options: string[]
-  placeholder?: string
-  className?: string
-}) {
-  const [value, setValue] = useState('')
-  const [query, setQuery] = useState('')
-  const [isOpen, setIsOpen] = useState(false)
-  const matches = options.filter((option) => option.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
-
-  const choose = (option: string) => {
-    setValue(option)
-    setQuery(option)
-    setIsOpen(false)
-  }
-
-  return <label className={`search-select ${className}`}>
-    <span>{label}</span>
-    <div className="search-select-control">
-      <Search size={15} />
-      <input
-        value={query}
-        placeholder={placeholder}
-        onFocus={() => setIsOpen(true)}
-        onChange={(event) => {
-          setQuery(event.target.value)
-          setValue('')
-          setIsOpen(true)
-        }}
-        onBlur={() => window.setTimeout(() => {
-          setIsOpen(false)
-          setQuery(value)
-        }, 160)}
-        aria-label={label}
-        aria-expanded={isOpen}
-        aria-autocomplete="list"
-      />
-      <ChevronDown size={16} />
-      {isOpen && <div className="search-select-options" role="listbox">
-        {matches.length > 0 ? matches.map((option) => <button type="button" key={option} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(option)}>{option}</button>) : <span>Ничего не найдено</span>}
-      </div>}
-    </div>
-  </label>
 }
 
 function RegionFilter({
@@ -591,6 +792,14 @@ function CorePages({
   onOpenMaterial,
   onSetEthnosRegion,
   onClearEthnosRegion,
+  onCreateCollection,
+  collections,
+  onOpenCollection,
+  myCollections,
+  onSaveToCollection,
+  onSaveCollection,
+  onEditCollection,
+  isMine,
 }: {
   route: string
   location: Location
@@ -606,6 +815,14 @@ function CorePages({
   onOpenMaterial: (material: Material) => void
   onSetEthnosRegion: (region: Region) => void
   onClearEthnosRegion: () => void
+  onCreateCollection: () => void
+  collections: UserCollection[]
+  onOpenCollection: (collection: UserCollection) => void
+  myCollections: UserCollection[]
+  onSaveToCollection: (material: Material) => void
+  onSaveCollection: (collection: UserCollection) => void
+  onEditCollection: (collection: UserCollection) => void
+  isMine: (collection: UserCollection) => boolean
 }) {
   if (route === 'peoples') {
     return <section className="inner-page directory-page">
@@ -720,6 +937,8 @@ function CorePages({
     const materialEthnos = peopleByName(material.people) ?? { selfName: 'народ', tone: 'mari' }
     const topic = topicBySlug(material.topic)
     const materialRegion = availableRegions.find((region) => region.name === material.region) ?? null
+    const photoCount = Math.min(Math.max(material.photos ?? 3, 1), 3)
+    const savedInCollection = myCollections.some((collection) => collection.items.includes(material.slug))
     // «Читайте дальше» держится того же региона, иначе из материала о Марий Эл уводило бы в другой край.
     const related = materialsFor(material.people, null, material.region).filter((item) => item.slug !== material.slug).slice(0, 3)
 
@@ -732,10 +951,23 @@ function CorePages({
         <span>{material.title}</span>
       </div>
       <div className="material-head">
-        <div><div className="material-tags"><span className={`ethnos-tag tag-${materialEthnos.tone}`}>{material.people} · {materialEthnos.selfName}</span><span className="soft-tag"><MapPin size={12} /> {material.region}</span><span className="soft-tag">{topic.title}</span></div><h1>{material.title}</h1><p>{material.intro}</p></div>
-        <div className="author-box"><span className="avatar">{material.authorInitials}</span><div><small>Опубликовал</small><strong>{material.author}</strong><span>{material.date}</span></div><button aria-label="Сохранить"><Heart size={18} /></button></div>
+        <div><div className="material-tags"><span className={`ethnos-tag tag-${materialEthnos.tone}`}>{material.people} · {materialEthnos.selfName}</span><span className="soft-tag"><MapPin size={12} /> {material.region}</span><span className="soft-tag">{topic.title}</span></div><h1>{material.title}</h1><p>{material.intro}</p>
+          <button
+            className={`save-material${savedInCollection ? ' saved' : ''}`}
+            onClick={() => onSaveToCollection(material)}
+            aria-pressed={savedInCollection}
+          >
+            <Heart size={17} fill={savedInCollection ? 'currentColor' : 'none'} />
+            {savedInCollection ? 'Материал в коллекции' : 'Сохранить в коллекцию'}
+          </button>
+        </div>
+        <div className="author-box"><span className="avatar">{material.authorInitials}</span><div><small>Опубликовал</small><strong>{material.author}</strong><span>{material.date}</span></div></div>
       </div>
-      <div className="material-gallery"><div className={`material-photo photo-main image-${material.image}`}><span>01</span></div><div className="material-photo photo-detail"><span>02</span></div><div className="material-photo photo-landscape"><span>03</span></div></div>
+      <div className={`material-gallery photos-${photoCount}`}>
+        {['photo-main', 'photo-detail', 'photo-landscape'].slice(0, photoCount).map((shape, index) => (
+          <div className={`material-photo ${shape}${index === 0 ? ` image-${material.image}` : ''}`} key={shape}><span>0{index + 1}</span></div>
+        ))}
+      </div>
       <div className="material-layout">
         <article className="material-story"><p className="lead">{material.lead}</p><p>{material.intro}</p><h2>Как собирался материал</h2><p>{material.collected}</p><div className="quote-note"><BookOpen size={19} /><span>Источник: {material.source}</span></div></article>
         <aside className="material-aside">
@@ -753,94 +985,211 @@ function CorePages({
     </section>
   }
 
-  if (route === 'collections') {
-    return <section className="inner-page collection-page">
-      <div className="page-intro split-intro"><div><p className="kicker">Подборки пользователей</p><h1>Коллекции</h1><p>Сохраняйте чужие публикации в личные тематические подборки или открывайте свои находки для всех.</p></div><button className="publish-button"><FolderHeart size={16} /> Создать коллекцию</button></div>
-      <div className="collection-feature"><div className="collection-art"><span>12</span><i /><i /><i /></div><div><p className="kicker">Коллекция недели</p><h2>Память о доме</h2><p>Семейные фотографии, письма и голоса из разных уголков Марий Эл. Подборка, которую собирают участники из пяти населённых пунктов.</p><div className="collection-by"><span className="avatar">МС</span> Собрала Мария С. · 12 материалов</div><button className="dark-button">Открыть коллекцию <ArrowRight size={17} /></button></div></div>
-      <div className="section-heading collection-title"><div><p className="kicker">Открытые подборки</p><h2>Собрано людьми</h2></div><button className="text-button">Все коллекции <ArrowRight size={17} /></button></div>
-      <div className="collection-grid">{[['Голоса детства', 'Аудио и устные истории', '18 материалов', 'coll-voice', 'pesni-kotorye-peli-u-pechi'], ['Узоры Поволжья', 'Орнаменты и ремёсла', '24 материала', 'coll-pattern', 'ornament-na-polotence-babushki'], ['Дороги семьи', 'Люди и населённые пункты', '9 материалов', 'coll-roads', 'istoriya-starogo-doma']].map(([name, description, count, tone, slug]) => <article className="collection-card" key={name}><div className={`collection-cover ${tone}`}><i /><i /><i /></div><p>{description}</p><h3>{name}</h3><div><span>{count}</span><button onClick={() => onOpenMaterial(materialBySlug(slug))} aria-label={`Открыть коллекцию «${name}»`}><ArrowRight size={17} /></button></div></article>)}</div>
+  if (route === 'collection') {
+    const collection = collections.find((item) => item.id === location.collection)
+    if (!collection) return <section className="inner-page collection-page">
+      <div className="breadcrumbs"><button onClick={() => onNavigate('collections')}>Коллекции</button><span>/</span><span>Не найдена</span></div>
+      <div className="empty-note"><Sparkles size={18} /><span>Такой коллекции нет. Возможно, ссылка устарела или подборку удалили.</span></div>
+    </section>
+
+    const items = collection.items.map(materialBySlug)
+
+    return <section className="inner-page collection-page single-collection">
+      <div className="breadcrumbs"><button onClick={() => onNavigate('collections')}>Коллекции</button><span>/</span><span>{collection.name}</span></div>
+      <div className="collection-hero">
+        <div className={`collection-hero-cover ${collection.cover}`}><i /><i /><i /></div>
+        <div className="collection-hero-copy">
+          <p className="kicker">Подборка</p>
+          <h1>{collection.name}</h1>
+          <p>{collection.description}</p>
+          <div className="collection-hero-meta">
+            <span className="collection-by"><span className="avatar">{collection.authorInitials}</span> {collection.author}</span>
+            <span className={`access-tag access-${collection.access === 'Публичная' ? 'public' : collection.access === 'По ссылке' ? 'link' : 'private'}`}>{collection.access}</span>
+            <span className="collection-count">{materialsWord(items.length)}</span>
+          </div>
+          <div className="collection-hero-actions">
+            {isMine(collection)
+              ? <button className="dark-button" onClick={() => onEditCollection(collection)}><Pencil size={16} /> Настройки подборки</button>
+              : <button className="dark-button" onClick={() => onSaveCollection(collection)}><FolderHeart size={16} /> Сохранить подборку</button>}
+            <button className="outline-button"><Download size={16} /> Скачать материалы</button>
+          </div>
+        </div>
+      </div>
+
+      {collection.access === 'Приватная' && <div className="empty-note private-note">
+        <Sparkles size={18} />
+        <span>Коллекция приватная: её видите только вы. Смените доступ, чтобы поделиться ссылкой.</span>
+      </div>}
+
+      <div className="region-subheading materials-heading"><div><p className="kicker">Состав подборки</p><h2>Что внутри</h2></div></div>
+      {items.length > 0
+        ? <div className="compact-publications">{items.map((item) => <button key={item.slug} onClick={() => onOpenMaterial(item)}><span className={`compact-image image-${item.image}`} /><span><small>{item.people} · {topicBySlug(item.topic).title}</small><strong>{item.title}</strong><em>{item.author} · {shortRegion(item.region)}</em></span><ArrowRight size={17} /></button>)}</div>
+        : <div className="empty-note"><Sparkles size={18} /><span>В подборке пока нет материалов. Добавляйте их кнопкой «Добавить в коллекцию» на странице любой публикации.</span></div>}
     </section>
   }
 
-  return <section className="inner-page profile-page">
-    <div className="profile-cover"><span className="profile-pattern"><i /><i /><i /><i /></span></div>
-    <div className="profile-summary"><span className="profile-avatar">АП</span><div><p className="kicker">Личный кабинет</p><h1>Алина Петрова</h1><p>Собираю семейные истории и материалы о марийской культуре.</p></div><button className="outline-button"><UserRound size={16} /> Редактировать профиль</button></div>
-    <div className="profile-tabs"><button className="active">Портфолио</button><button>Мои публикации <span>7</span></button><button>Коллекции <span>3</span></button></div>
-    <div className="portfolio-layout"><div><div className="section-heading compact"><div><p className="kicker">Избранные работы</p><h2>Моё портфолио</h2></div><button className="download-button"><Download size={16} /> Скачать PDF</button></div><div className="portfolio-list">{['pesni-kotorye-peli-u-pechi', 'ornament-na-polotence-babushki', 'istoriya-starogo-doma'].map(materialBySlug).map((item, index) => <button key={item.slug} onClick={() => onOpenMaterial(item)}><b>0{index + 1}</b><span><strong>{item.title}</strong><small>{topicBySlug(item.topic).title} · {item.type}</small></span><em>{item.people}</em><ArrowRight size={17} /></button>)}</div></div><aside className="portfolio-side"><span className="side-label">В портфолио</span><b>7</b><span>опубликованных<br />материалов</span><hr /><span className="side-label">Темы</span><p>Семейная память<br />Музыка и песни<br />Язык и слово</p></aside></div>
-  </section>
+  if (route === 'collections') {
+    return <section className="inner-page collection-page">
+      <div className="page-intro split-intro"><div><p className="kicker">Подборки пользователей</p><h1>Коллекции</h1><p>Сохраняйте чужие публикации в личные тематические подборки или открывайте свои находки для всех.</p></div><button className="publish-button" onClick={onCreateCollection}><FolderHeart size={16} /> Создать коллекцию</button></div>
+      <div className="collection-feature"><div className="collection-art"><span>{FEATURED_COLLECTION.count}</span><i /><i /><i /></div><div><p className="kicker">Коллекция недели</p><h2>{FEATURED_COLLECTION.name}</h2><p>{FEATURED_COLLECTION.description}</p><div className="collection-by"><span className="avatar">{FEATURED_COLLECTION.authorInitials}</span> Собрала {FEATURED_COLLECTION.author} · {materialsWord(FEATURED_COLLECTION.count)}</div><button className="dark-button" onClick={() => onOpenCollection(FEATURED_COLLECTION)}>Открыть коллекцию <ArrowRight size={17} /></button></div></div>
+      <div className="section-heading collection-title"><div><p className="kicker">Открытые подборки</p><h2>Собрано людьми</h2></div></div>
+      <div className="collection-grid">{collections.filter((item) => item.id !== FEATURED_COLLECTION.id && item.access !== 'Приватная').map((collection) => <article className="collection-card clickable-card" key={collection.id} onClick={() => onOpenCollection(collection)}><div className={`collection-cover ${collection.cover}`}><i /><i /><i /></div><p>{collection.description}</p><h3>{collection.name}</h3><div><span>{materialsWord(collection.count)}</span><button aria-label={`Открыть коллекцию «${collection.name}»`}><ArrowRight size={17} /></button></div></article>)}</div>
+    </section>
+  }
+
+  return null
 }
 
-function PublishModal({ onClose }: { onClose: () => void }) {
-  const [step, setStep] = useState(1)
-  const [galleryFiles, setGalleryFiles] = useState<File[]>([])
-  const [attachmentFiles, setAttachmentFiles] = useState<File[]>([])
+function ProfilePage({
+  account,
+  posts,
+  collections,
+  tab,
+  onTab,
+  onOpenPublish,
+  onCreateCollection,
+  onTogglePost,
+  onEditPost,
+  onTogglePortfolio,
+  onOpenMaterial,
+  onOpenCollection,
+  onEditCollection,
+  onOpenSettings,
+  onSignOut,
+}: {
+  account: Account
+  posts: UserPost[]
+  collections: UserCollection[]
+  tab: 'portfolio' | 'posts' | 'collections'
+  onTab: (tab: 'portfolio' | 'posts' | 'collections') => void
+  onOpenPublish: () => void
+  onCreateCollection: () => void
+  onTogglePost: (id: string) => void
+  onEditPost: (post: UserPost) => void
+  onTogglePortfolio: (id: string) => void
+  onOpenMaterial: (material: Material) => void
+  onOpenCollection: (collection: UserCollection) => void
+  onEditCollection: (collection: UserCollection) => void
+  onOpenSettings: () => void
+  onSignOut: () => void
+}) {
+  const published = posts.filter((post) => post.status === 'Опубликован' && post.inPortfolio)
+  const publishedCount = posts.filter((post) => post.status === 'Опубликован').length
 
-  const addGalleryFiles = (files: FileList | null) => {
-    if (!files) return
-    setGalleryFiles((current) => [...current, ...Array.from(files)].slice(0, 10))
-  }
-
-  const addAttachmentFiles = (files: FileList | null) => {
-    if (!files) return
-    setAttachmentFiles((current) => [...current, ...Array.from(files)])
-  }
-
-  return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
-      <section className="publish-modal" role="dialog" aria-modal="true" aria-label="Добавить материал" onMouseDown={(event) => event.stopPropagation()}>
-        <div className="modal-header">
-          <div><p className="kicker">Новая публикация</p><h2>Добавьте историю</h2></div>
-          <button onClick={onClose} aria-label="Закрыть"><X size={22} /></button>
-        </div>
-        <div className="stepper"><span className={step >= 1 ? 'done' : ''}>1. Материал</span><i /><span className={step >= 2 ? 'done' : ''}>2. Контекст</span><i /><span className={step >= 3 ? 'done' : ''}>3. Публикация</span></div>
-        {step === 1 && <div className="modal-content">
-          <label>Название<input placeholder="Например, История старого дома" /></label>
-          <div className="gallery-editor">
-            <div className="gallery-editor-header">
-              <div><strong>Фото и видео</strong><span>До 10 файлов для галереи</span></div>
-              <label className="add-media-button"><Plus size={16} /> Добавить фото<input type="file" accept="image/*,video/*" multiple onChange={(event) => addGalleryFiles(event.target.files)} /></label>
-            </div>
-            {galleryFiles.length > 0 ? (
-              <div className="gallery-strip">
-                {galleryFiles.map((file, index) => (
-                  <div className="gallery-file" key={`${file.name}-${index}`}>
-                    {file.type.startsWith('image/') ? <img src={URL.createObjectURL(file)} alt={file.name} /> : <div className="video-placeholder"><Video size={24} /><span>{file.name}</span></div>}
-                    <button onClick={() => setGalleryFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} aria-label={`Удалить ${file.name}`}><X size={14} /></button>
-                    <small>{index + 1}</small>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <label className="gallery-empty"><Image size={26} /><strong>Здесь появится ваша галерея</strong><span>Перетащите файлы или добавьте их кнопкой справа</span><input type="file" accept="image/*,video/*" multiple onChange={(event) => addGalleryFiles(event.target.files)} /></label>
-            )}
-          </div>
-          <label>Краткое описание<textarea placeholder="Коротко расскажите, что увидит или услышит человек" /></label>
-          <div className="attachments-editor">
-            <div className="attachments-header"><div><strong>Аудио и документы</strong><span>Файлы будут показаны внизу публикации</span></div><label className="attachment-add"><Paperclip size={16} /> Прикрепить<input type="file" accept="audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.odt,.ods,.odp" multiple onChange={(event) => addAttachmentFiles(event.target.files)} /></label></div>
-            {attachmentFiles.length > 0 && <div className="attachment-list">
-              {attachmentFiles.map((file, index) => <div className="attachment-row" key={`${file.name}-${index}`}><FileText size={17} /><span title={file.name}>{file.name}</span><small>{(file.size / 1024 / 1024).toFixed(1)} МБ</small><button onClick={() => setAttachmentFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} aria-label={`Удалить ${file.name}`}><Trash2 size={15} /></button></div>)}
-            </div>}
-          </div>
-        </div>}
-        {step === 2 && <div className="modal-content form-grid">
-          <SearchSelect label="Связанный народ" placeholder="Введите народ" options={PEOPLES.map((people) => people.name)} />
-          <SearchSelect label="Регион" placeholder="Введите регион" options={['Республика Марий Эл', 'Республика Татарстан', 'Удмуртская Республика', 'Республика Башкортостан']} />
-          <SearchSelect label="Язык" placeholder="Введите язык" options={['Русский', 'Марийский', 'Татарский', 'Чувашский', 'Удмуртский', 'Башкирский']} />
-          <SearchSelect label="Тема" placeholder="Введите тему" options={TOPICS.map((topic) => topic.title)} />
-          <label className="full-width">Источник<textarea placeholder="Семейный архив, интервью, книга, музейный фонд..." /></label>
-        </div>}
-        {step === 3 && <div className="modal-content">
-          <div className="notice"><BookOpen size={20} /><p>После технической проверки файл будет опубликован. Автоматическая система проверит публикацию на нарушения, а не на историческую достоверность.</p></div>
-          <label className="check"><input type="checkbox" /> <span>Я являюсь автором материалов либо имею разрешение на их публикацию и скачивание.</span></label>
-          <label className="check"><input type="checkbox" /> <span>Я подтверждаю, что мне исполнилось 14 лет.</span></label>
-        </div>}
-        <div className="modal-footer">
-          {step > 1 && <button className="back-button" onClick={() => setStep(step - 1)}><ArrowLeft size={16} /> {step === 2 ? 'К материалу' : 'К контексту'}</button>}
-          <button className="publish-button" onClick={() => step < 3 ? setStep(step + 1) : onClose()}>{step < 3 ? 'Продолжить' : <><Send size={16} /> Опубликовать</>}</button>
-        </div>
-      </section>
+  return <section className="inner-page profile-page">
+    <div className="profile-cover"><span className="profile-pattern"><i /><i /><i /><i /></span></div>
+    <div className="profile-summary">
+      <span className="profile-avatar">{account.initials}</span>
+      <div><p className="kicker">Личный кабинет</p><h1>{account.name}</h1><p>{account.about}</p><span className="profile-email">{account.email}</span></div>
+      <div className="profile-actions">
+        <button className="outline-button" onClick={onOpenSettings}><UserRound size={16} /> Редактировать профиль</button>
+        <button className="text-button" onClick={onSignOut}><LogOut size={15} /> Выйти</button>
+      </div>
     </div>
-  )
+
+    <div className="profile-tabs">
+      <button className={tab === 'portfolio' ? 'active' : ''} onClick={() => onTab('portfolio')}>Портфолио</button>
+      <button className={tab === 'posts' ? 'active' : ''} onClick={() => onTab('posts')}>Мои публикации <span>{posts.length}</span></button>
+      <button className={tab === 'collections' ? 'active' : ''} onClick={() => onTab('collections')}>Коллекции <span>{collections.length}</span></button>
+    </div>
+
+    {tab === 'portfolio' && (published.length > 0
+      ? <div className="portfolio-layout">
+          <div>
+            <div className="section-heading compact"><div><p className="kicker">Избранные работы</p><h2>Моё портфолио</h2></div><button className="download-button"><Download size={16} /> Скачать PDF</button></div>
+            <div className="portfolio-list">{published.map((post, index) => <button key={post.id} onClick={() => post.materialSlug && onOpenMaterial(materialBySlug(post.materialSlug))}><b>0{index + 1}</b><span><strong>{post.title}</strong><small>{topicBySlug(post.topic).title} · {post.type}</small></span><em>{post.people}</em><ArrowRight size={17} /></button>)}</div>
+          </div>
+          <aside className="portfolio-side">
+            <span className="side-label">В портфолио</span><b>{published.length}</b><span>опубликованных<br />материалов</span>
+            <hr />
+            <span className="side-label">Темы</span>
+            <p>{[...new Set(published.map((post) => topicBySlug(post.topic).title))].join(', ')}</p>
+            <hr />
+            <span className="side-label">Доступ</span>
+            <p>{account.publicPortfolio
+              ? 'Портфолио открыто по ссылке. Закрыть его можно в настройках профиля.'
+              : 'Портфолио закрыто. Включите публичную версию в настройках, чтобы делиться ссылкой.'}</p>
+          </aside>
+        </div>
+      : <div className="empty-note">
+          <Sparkles size={18} />
+          <span>{publishedCount > 0
+            ? 'Портфолио вы собираете сами: отметьте звёздочкой работы в разделе «Мои публикации», и они появятся здесь.'
+            : 'В портфолио попадают ваши опубликованные работы. Как только появится первая публикация, отметьте её звёздочкой.'}</span>
+          <button className="outline-button" onClick={() => publishedCount > 0 ? onTab('posts') : onOpenPublish()}>
+            {publishedCount > 0 ? <>К публикациям</> : <><Upload size={15} /> Добавить материал</>}
+          </button>
+        </div>)}
+
+    {tab === 'posts' && <>
+      <div className="section-heading compact">
+        <div><p className="kicker">Все работы</p><h2>Мои публикации</h2></div>
+        <button className="publish-button" onClick={onOpenPublish}><Upload size={16} /> Добавить материал</button>
+      </div>
+      {posts.length > 0
+        ? <div className="my-posts">{posts.map((post) => <article
+            className="my-post clickable-card"
+            key={post.id}
+            onClick={() => post.materialSlug ? onOpenMaterial(materialBySlug(post.materialSlug)) : onEditPost(post)}
+          >
+            <span className={`compact-image image-${post.image}`} />
+            <div className="my-post-body">
+              <small>{topicBySlug(post.topic).title} · {post.people} · {shortRegion(post.region)}</small>
+              <strong>{post.title}</strong>
+              <em>{post.date}</em>
+            </div>
+            <span className={`status-tag status-${post.status === 'Опубликован' ? 'live' : post.status === 'Черновик' ? 'draft' : post.status === 'Скрыт' ? 'hidden' : 'review'}`}>{post.status}</span>
+            <div className="my-post-actions" onClick={(event) => event.stopPropagation()}>
+              {post.status === 'Опубликован' && (
+                <button
+                  className={post.inPortfolio ? 'starred' : ''}
+                  onClick={() => onTogglePortfolio(post.id)}
+                  aria-label={post.inPortfolio ? 'Убрать из портфолио' : 'Добавить в портфолио'}
+                  aria-pressed={!!post.inPortfolio}
+                ><Star size={16} fill={post.inPortfolio ? 'currentColor' : 'none'} /></button>
+              )}
+              <button onClick={() => onEditPost(post)} aria-label="Редактировать"><Pencil size={16} /></button>
+              {(post.status === 'Опубликован' || post.status === 'Скрыт') && (
+                <button onClick={() => onTogglePost(post.id)} aria-label={post.status === 'Скрыт' ? 'Показать' : 'Скрыть'}>
+                  {post.status === 'Скрыт' ? <Eye size={16} /> : <EyeOff size={16} />}
+                </button>
+              )}
+              {post.materialSlug && <button onClick={() => onOpenMaterial(materialBySlug(post.materialSlug!))} aria-label="Открыть материал"><ArrowRight size={16} /></button>}
+            </div>
+          </article>)}</div>
+        : <div className="empty-note">
+            <Sparkles size={18} />
+            <span>Вы пока ничего не публиковали. Начните с семейной фотографии, записи разговора или найденного документа.</span>
+            <button className="outline-button" onClick={onOpenPublish}><Upload size={15} /> Добавить материал</button>
+          </div>}
+    </>}
+
+    {tab === 'collections' && <>
+      <div className="section-heading compact">
+        <div><p className="kicker">Мои подборки</p><h2>Коллекции</h2></div>
+        <button className="publish-button" onClick={onCreateCollection}><FolderHeart size={16} /> Создать коллекцию</button>
+      </div>
+      {collections.length > 0
+        ? <div className="collection-grid">{collections.map((collection) => <article className="collection-card clickable-card" key={collection.id} onClick={() => onOpenCollection(collection)}>
+            <div className={`collection-cover ${collection.cover}`}><i /><i /><i /></div>
+            <p>{collection.description}</p>
+            <h3>{collection.name}</h3>
+            <button
+              className="collection-settings"
+              onClick={(event) => { event.stopPropagation(); onEditCollection(collection) }}
+              aria-label={`Настройки коллекции «${collection.name}»`}
+            ><Pencil size={15} /></button>
+            <div><span>{materialsWord(collection.count)}</span>{collection.savedFrom
+              ? <span className="access-tag access-saved">сохранено у {collection.savedFrom.split(' ')[0]}</span>
+              : <span className={`access-tag access-${collection.access === 'Публичная' ? 'public' : collection.access === 'По ссылке' ? 'link' : 'private'}`}>{collection.access}</span>}</div>
+          </article>)}</div>
+        : <div className="empty-note">
+            <Sparkles size={18} />
+            <span>Коллекция — это подборка материалов, в том числе чужих. Создайте первую, чтобы собирать в неё находки.</span>
+            <button className="outline-button" onClick={onCreateCollection}><FolderHeart size={15} /> Создать коллекцию</button>
+          </div>}
+    </>}
+  </section>
 }
 
 export default App
