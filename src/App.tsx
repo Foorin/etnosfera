@@ -40,6 +40,11 @@ import type { Material } from './data/content'
 import { SearchSelect } from './SearchSelect'
 import { EditorPage } from './Editor'
 import { ProfileSettings } from './ProfileSettings'
+import { Globe } from './Globe'
+import { PeoplePicker } from './PeoplePicker'
+import type { PeopleRow } from './PeoplePicker'
+import { RUSSIA, materialsAtPlace, pathToPlace, placeById } from './data/geo'
+import type { Place } from './data/geo'
 import { AddToCollectionModal, AuthModal, CollectionModal, SuccessNote } from './AccountModals'
 import { COLLECTION_COVERS, DEMO_ACCOUNT, DEMO_COLLECTIONS, DEMO_POSTS, EMPTY_POST, FEATURED_COLLECTION, PUBLIC_COLLECTIONS } from './data/account'
 import type { Account, UserCollection, UserPost } from './data/account'
@@ -110,7 +115,7 @@ const regions: Region[] = [
   },
 ]
 
-const routes = new Set(['home', 'peoples', 'people', 'region', 'topic', 'material', 'collections', 'collection', 'profile', 'editor', 'settings'])
+const routes = new Set(['home', 'map', 'peoples', 'people', 'region', 'topic', 'material', 'collections', 'collection', 'profile', 'editor', 'settings'])
 
 type Location = {
   route: string
@@ -119,9 +124,11 @@ type Location = {
   material: string | null
   region: string | null
   collection: string | null
+  // Путь по карте: пустой массив — планета, дальше ['ru'], ['ru','mari-el'] и глубже.
+  place: string[]
 }
 
-const HOME: Location = { route: 'home', people: null, topic: null, material: null, region: null, collection: null }
+const HOME: Location = { route: 'home', people: null, topic: null, material: null, region: null, collection: null, place: [] }
 
 // Адрес хранится в хеше сегментами: #people/tatar, #topic/tatar/language, #material/<слаг>.
 // Благодаря этому у каждого материала есть своя ссылка, а обновление страницы не сбрасывает экран.
@@ -147,7 +154,9 @@ function parseHash(): Location {
     if (!material) return HOME
     return { ...HOME, route, people: material.people, topic: material.topic, material: material.slug }
   }
-  if (route === 'region') return { ...HOME, route, region: first ?? null }
+  // Страница региона теперь одна — уровень карты. Старый адрес переводим на неё.
+  if (route === 'region') return { ...HOME, route: 'map', place: ['ru', first ?? 'mari-el'] }
+  if (route === 'map') return { ...HOME, route, place: segments.slice(1) }
   if (route === 'collection') return { ...HOME, route, collection: first ?? null }
   if (route === 'editor') return { ...HOME, route, material: first ?? null }
   return { ...HOME, route }
@@ -161,6 +170,13 @@ function regionInPrepositional(name: string) {
   return name
     .replace('Удмуртская Республика', 'Удмуртской Республике')
     .replace('Республика', 'Республике')
+}
+
+function placeKindLabel(place: Place) {
+  if (place.kind === 'country') return 'Страна'
+  if (place.kind === 'region') return 'Регион'
+  if (place.kind === 'district') return 'Район'
+  return 'Населённый пункт'
 }
 
 function materialsWord(count: number) {
@@ -184,6 +200,7 @@ function locationToHash(location: Location) {
   ].filter(Boolean).join('/')
   if (location.route === 'material') return `material/${location.material ?? ''}`
   if (location.route === 'region') return `region/${location.region ?? ''}`
+  if (location.route === 'map') return ['map', ...location.place].join('/')
   if (location.route === 'collection') return `collection/${location.collection ?? ''}`
   if (location.route === 'editor') return location.material ? `editor/${location.material}` : 'editor'
   return location.route
@@ -200,6 +217,7 @@ function App() {
   const [isAuthOpen, setIsAuthOpen] = useState(false)
   const [isCollectionOpen, setIsCollectionOpen] = useState(false)
   const [editingCollection, setEditingCollection] = useState<UserCollection | null>(null)
+  const [peoplePicker, setPeoplePicker] = useState<{ title: string; rows: PeopleRow[]; region: Region | null } | null>(null)
   const [collectingMaterial, setCollectingMaterial] = useState<Material | null>(null)
   const [successNote, setSuccessNote] = useState<{ title: string; text: string } | null>(null)
   const [myPosts, setMyPosts] = useState<UserPost[]>([])
@@ -224,7 +242,7 @@ function App() {
     setSelectedRegion(region)
     setSelectedPeople('Все народы')
     // На странице региона выбор в боковом списке должен менять и адрес, иначе ссылка перестанет совпадать с экраном.
-    if (location.route === 'region') go({ ...HOME, route: 'region', region: region.id })
+    if (location.route === 'map' && location.place[1]) go({ ...HOME, route: 'map', place: ['ru', region.id] })
   }
 
   useEffect(() => {
@@ -260,7 +278,7 @@ function App() {
   }
 
   const navigate = (nextRoute: string) => {
-    if (nextRoute === 'region') return go({ ...HOME, route: 'region', region: selectedRegion.id })
+    if (nextRoute === 'region') return go({ ...HOME, route: 'map', place: ['ru', selectedRegion.id] })
     go({ ...HOME, route: nextRoute })
   }
 
@@ -270,6 +288,10 @@ function App() {
 
   const openTopic = (peopleName: string | null, topicSlug: string, regionId: string | null = null) => {
     go({ ...HOME, route: 'topic', people: peopleName, topic: topicSlug, region: regionId })
+  }
+
+  const goPlace = (place: string[]) => {
+    go({ ...HOME, route: 'map', place })
   }
 
   const openCollection = (collection: UserCollection) => {
@@ -475,8 +497,8 @@ function App() {
       <section className="hero" id="top">
         <div className="hero-copy">
           <div className="eyebrow"><Sparkles size={15} /> Цифровой атлас культурной памяти</div>
-          <h1>Россия звучит <em>многими голосами.</em></h1>
-          <p>Исследуйте истории, языки и традиции народов России. Сохраняйте своё наследие так, чтобы его могли услышать другие.</p>
+          <h1>Эти голоса звучат <em>по всему миру.</em></h1>
+          <p>Народы России живут не только в России. Начните с планеты и дойдите до отдельного села — до историй, языков и традиций, которые сохранили люди.</p>
           <label className="search-box">
             <Search size={20} />
             <input placeholder="Найти народ, место, историю или слово" />
@@ -501,8 +523,8 @@ function App() {
       <section className="atlas-section" id="atlas">
         <div className="section-heading">
           <div>
-            <p className="kicker">География материалов</p>
-            <h2>Откройте Россию через живые истории</h2>
+            <p className="kicker">От планеты до села</p>
+            <h2>Выберите точку на карте мира</h2>
           </div>
           <button className="text-button">Весь каталог <ArrowRight size={17} /></button>
         </div>
@@ -513,50 +535,27 @@ function App() {
               <span><Globe2 size={16} /> Все регионы</span>
               <button><Filter size={15} /> Фильтры</button>
             </div>
-            <div className="russia-map" aria-label="Схематическая карта России">
-              <div className="map-label label-west">Европейская часть</div>
-              <div className="map-label label-east">Сибирь и Дальний Восток</div>
-              <div className="map-curve curve-a" />
-              <div className="map-curve curve-b" />
-              <div className="map-curve curve-c" />
-              {availableRegions.map((region) => (
-                <button
-                  className={`map-point ${region.id === selectedRegion.id ? 'active' : ''}`}
-                  key={region.id}
-                  style={{ left: region.x, top: region.y }}
-                  onClick={() => selectRegion(region)}
-                  aria-label={region.name}
-                >
-                  <span className="point-pulse" />
-                  <span className="point-core" />
-                  <small>{region.name.replace('Республика ', '')}</small>
-                </button>
-              ))}
-              <div className="map-legend"><span className="legend-dot" /> Материалы на карте</div>
-            </div>
+            <Globe ids={[]} onGo={goPlace} />
           </div>
 
+          {/* Панель описывает то, что отмечено на глобусе, — страну, а не один регион. */}
           <aside className="region-panel">
-            <div className="panel-topline"><span>Выбрано на карте</span><Compass size={18} /></div>
-            <h3>{selectedRegion.name}</h3>
-            <p>{selectedRegion.description}</p>
-            <div className="region-stat"><b>{countForRegion(selectedRegion.name)}</b><span>публикации<br />в регионе</span></div>
+            <div className="panel-topline"><span>Отмечено на планете</span><Compass size={18} /></div>
+            <h3>Россия</h3>
+            <p>{RUSSIA.description}</p>
+            <div className="region-stat"><b>{MATERIALS.length}</b><span>публикаций<br />по всей стране</span></div>
             <div className="people-list">
-              <span className="list-label">Представленные народы</span>
-              {selectedRegion.peoples.map((person) => (
-                <button
-                  className={`people-row ${selectedPeople === person.name ? 'selected' : ''}`}
-                  onClick={() => openEthnos(person.name, selectedRegion)}
-                  key={person.name}
-                >
-                  <i className={`tone-${person.tone}`} />
-                  <span>{person.name}</span>
-                  <b>{countForPeople(person.name, selectedRegion.name)}</b>
+              <span className="list-label">Регионы с материалами</span>
+              {RUSSIA.children!.map((region) => (
+                <button className="people-row" onClick={() => goPlace(['ru', region.id])} key={region.id}>
+                  <i className={`tone-${region.tone ?? 'mari'}`} />
+                  <span>{shortRegion(region.name)}</span>
+                  <b>{countForRegion(region.regionName ?? '')}</b>
                   <ArrowRight size={15} />
                 </button>
               ))}
             </div>
-            <button className="outline-button" onClick={() => navigate('region')}>Страница региона <ArrowRight size={16} /></button>
+            <button className="outline-button" onClick={() => goPlace(['ru'])}>Открыть карту России <ArrowRight size={16} /></button>
           </aside>
         </div>
       </section>
@@ -654,7 +653,116 @@ function App() {
         </div>
       </section>
 
-      </> : route === 'settings' && account ? <ProfileSettings
+      </> : route === 'map' ? <section className="inner-page map-page">
+        <div className="breadcrumbs">
+          <button onClick={() => navigate('home')}>Земля</button>
+          {pathToPlace(location.place.slice(1)).map((step, index) => {
+            const isLast = index === location.place.length - 1
+            return <span key={step.id} className="crumb-step">
+              <span>/</span>
+              {isLast
+                ? <span>{step.name}</span>
+                : <button onClick={() => goPlace(location.place.slice(0, index + 1))}>{step.name}</button>}
+            </span>
+          })}
+        </div>
+
+        {(() => {
+          const place = placeById(location.place.slice(1))
+          const region = place.kind === 'region' ? availableRegions.find((item) => item.id === place.id) : null
+          const rows: PeopleRow[] = place.kind === 'country'
+            ? PEOPLES.map((people) => ({ name: people.name, tone: people.tone, group: people.group, count: countForPeople(people.name) }))
+            : region?.peoples.map((person) => ({
+                name: person.name,
+                tone: person.tone,
+                group: peopleByName(person.name)?.group,
+                count: countForPeople(person.name, region.name),
+              })) ?? []
+          // В панель помещается пять строк; остальные ищутся в отдельном окне.
+          const shown = rows.slice(0, 5)
+          const hidden = rows.length - shown.length
+
+          // У населённого пункта карты нет, и узкая колонка рядом с пустотой выглядит
+          // странно — там заголовок идёт во всю ширину.
+          if (place.kind === 'settlement') return <div className="map-head">
+            <div>
+              <p className="kicker">{placeKindLabel(place)}</p>
+              <h1>{place.name}</h1>
+              <p className="map-side-text">{place.description ?? 'Материалы, записанные в этом месте.'}</p>
+            </div>
+            <div className="map-head-side">
+              <div className="map-side-stat">
+                <b>{materialsAtPlace(place).length}</b>
+                <span>материалов<br />в этом месте</span>
+              </div>
+              <button className="outline-button" onClick={() => goPlace(location.place.slice(0, -1))}>
+                <ArrowLeft size={15} /> На уровень выше
+              </button>
+            </div>
+          </div>
+
+          return <div className="map-layout">
+            <div className="map-holder">
+              <Globe ids={location.place} onGo={goPlace} />
+            </div>
+
+            <aside className="region-panel map-panel">
+              <div className="panel-topline"><span>{placeKindLabel(place)}</span><Compass size={18} /></div>
+              <h3>{place.name}</h3>
+              <p>{place.description ?? 'Выберите место на карте, чтобы посмотреть, что здесь записано.'}</p>
+              <div className="region-stat"><b>{materialsAtPlace(place).length}</b><span>материалов<br />в этом месте</span></div>
+
+              {rows.length > 0 && <div className="people-list">
+                <span className="list-label">{place.kind === 'country' ? 'Народы страны' : 'Народы региона'}</span>
+                {shown.map((row) => (
+                  <button className="people-row" onClick={() => openEthnos(row.name, region ?? null)} key={row.name}>
+                    <i className={`tone-${row.tone}`} />
+                    <span>{row.name}</span>
+                    <b>{row.count}</b>
+                    <ArrowRight size={15} />
+                  </button>
+                ))}
+                {hidden > 0 && <button className="text-button picker-open" onClick={() => setPeoplePicker({
+                  title: place.kind === 'country' ? 'Народы России' : `Народы: ${shortRegion(place.name)}`,
+                  rows,
+                  region: region ?? null,
+                })}>
+                  Другие народы {place.kind === 'country' ? 'страны' : 'в этом регионе'} ({hidden}) <ArrowRight size={15} />
+                </button>}
+              </div>}
+
+              {location.place.length > 1 && <button className="outline-button" onClick={() => goPlace(location.place.slice(0, -1))}>
+                <ArrowLeft size={15} /> На уровень выше
+              </button>}
+            </aside>
+          </div>
+        })()}
+
+        {(() => {
+          const place = placeById(location.place.slice(1))
+          const all = materialsAtPlace(place)
+          const items = place.kind === 'country'
+            // По стране берём по паре материалов от каждого региона — иначе в списке
+            // окажутся восемь подряд из одной республики.
+            ? RUSSIA.children!.flatMap((region) => all.filter((item) => item.region === region.regionName).slice(0, 2))
+            : all.slice(0, 8)
+          if (items.length === 0) return null
+          return <>
+            <div className="region-subheading materials-heading">
+              <div>
+                <p className="kicker">Что здесь записано</p>
+                <h2>{place.kind === 'country' ? 'Материалы со всей страны' : 'Материалы места'}</h2>
+              </div>
+              {all.length > items.length && <span className="materials-more">Показаны {items.length} из {all.length}</span>}
+            </div>
+            <div className="compact-publications">{items.map((item) => <button key={item.slug} onClick={() => openMaterial(item)}>
+              <span className={`compact-image image-${item.image}`} />
+              <span><small>{item.people} · {topicBySlug(item.topic).title}</small><strong>{item.title}</strong><em>{item.author} · {item.place}</em></span>
+              <ArrowRight size={17} />
+            </button>)}</div>
+          </>
+        })()}
+      </section> : route === 'settings' && account ? <ProfileSettings
         account={account}
         postCount={myPosts.length}
         collectionCount={myCollections.length}
@@ -719,6 +827,12 @@ function App() {
         onClose={() => setCollectingMaterial(null)}
         onToggle={(collectionId) => toggleInCollection(collectionId, collectingMaterial.slug)}
         onCreate={(name) => createCollectionWith(name, collectingMaterial.slug)}
+      />}
+      {peoplePicker && <PeoplePicker
+        title={peoplePicker.title}
+        rows={peoplePicker.rows}
+        onPick={(name) => { openEthnos(name, peoplePicker.region); setPeoplePicker(null) }}
+        onClose={() => setPeoplePicker(null)}
       />}
       {successNote && <SuccessNote title={successNote.title} text={successNote.text} onClose={() => { setSuccessNote(null); navigate('profile') }} />}
     </main>
@@ -910,25 +1024,6 @@ function CorePages({
             <span>{regionName ? `В регионе «${regionName}» по этой теме пока нет материалов.` : 'В этой теме пока нет опубликованных материалов. Вы можете стать первым автором.'}</span>
             {regionName && everywhere > 0 && <button className="outline-button" onClick={() => onOpenTopic(peopleName, topic.slug, null)}>Смотреть во всех регионах ({everywhere})</button>}
           </div>}
-    </section>
-  }
-
-  if (route === 'region') {
-    return <section className="inner-page region-page">
-      <div className="breadcrumbs"><button onClick={() => onNavigate('home')}>Карта</button><span>/</span><span>{selectedRegion.name}</span></div>
-      <div className="region-hero">
-        <div><p className="kicker">География материалов</p><h1>{selectedRegion.name}</h1><p>{selectedRegion.description}</p></div>
-        <div className="region-hero-stat"><b>{countForRegion(selectedRegion.name)}</b><span>историй, опубликованных<br />в этом регионе</span></div>
-      </div>
-      <div className="region-content">
-        <aside className="region-switcher"><span>Регионы на карте</span>{availableRegions.map((region) => <button className={region.id === selectedRegion.id ? 'selected' : ''} onClick={() => onSelectRegion(region)} key={region.id}><MapPin size={15} />{region.name.replace('Республика ', '')}</button>)}</aside>
-        <div>
-          <div className="region-subheading"><div><p className="kicker">Культуры региона</p><h2>Про кого рассказывает этот регион</h2></div><button className="text-button" onClick={() => onNavigate('peoples')}>Все народы <ArrowRight size={17} /></button></div>
-          <div className="region-people-grid">{selectedRegion.peoples.map((person) => <button onClick={() => onOpenEthnos(person.name, selectedRegion)} key={person.name}><i className={`tone-${person.tone}`} /><span>{person.name}</span><b>{countForPeople(person.name, selectedRegion.name)}</b><ArrowRight size={16} /></button>)}</div>
-          <div className="region-subheading materials-heading"><div><p className="kicker">Новое в регионе</p><h2>Истории жителей</h2></div><button className="filter-pill"><Filter size={15} /> Фильтры</button></div>
-          <div className="compact-publications">{availablePublications.filter((item) => item.region === selectedRegion.name).slice(0, 8).map((item) => <button key={item.slug} onClick={() => onOpenMaterial(item)}><span className={`compact-image image-${item.image}`} /><span><small>{item.people} · {item.type}</small><strong>{item.title}</strong><em>{item.author}</em></span><ArrowRight size={17} /></button>)}</div>
-        </div>
-      </div>
     </section>
   }
 

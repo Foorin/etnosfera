@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;1,600;1,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;1,600;1,700&family=Space+Grotesk:wght@500;600;700&display=swap');
 
 :root {
   color: #173d35;
@@ -413,3 +413,172 @@ footer { width: min(1320px, calc(100% - 64px)); margin: auto; padding: 35px 0 45
 .toggle-row.on .switch { background: #37614d; }
 .toggle-row.on .switch i { transform: translateX(20px); }
 .toggle-row:focus-visible { outline: 2px solid #b3533a; outline-offset: 2px; }
+
+/* --- Глобус и карты по уровням --- */
+.globe-stage { position: relative; display: grid; justify-items: center; gap: 14px; }
+.globe-svg { width: 100%; max-width: 440px; height: auto; display: block; }
+.globe-stage.flat .globe-svg { max-width: none; }
+.globe-country { fill: #4f7a6d; stroke: #16352e; stroke-width: .4; transition: fill .15s; }
+.globe-country.has-materials { fill: #e0b055; cursor: pointer; }
+.globe-country.has-materials:hover { fill: #efc978; }
+.globe-pin { cursor: pointer; }
+.globe-pin circle { fill: #b5533b; }
+.globe-pin .pin-halo { fill: none; stroke: #b5533b; stroke-width: 1.5; opacity: .6; animation: pin-pulse 2.4s ease-out infinite; }
+@keyframes pin-pulse { 0% { r: 8; opacity: .7 } 100% { r: 20; opacity: 0 } }
+.globe-caption { min-height: 46px; text-align: center; display: grid; gap: 4px; }
+.globe-caption strong { color: #173d35; font: 700 19px/1.2 'Playfair Display', Georgia, serif; }
+.globe-caption span { color: #74837b; font-size: 11px; }
+
+.map-pin { cursor: pointer; }
+.map-pin circle { fill: #b5533b; }
+.map-pin .pin-halo { fill: #b5533b; opacity: .18; }
+.map-pin:hover circle { fill: #8f3f2c; }
+.map-pin:hover .pin-halo { opacity: .32; }
+.map-pin.empty circle { fill: #9aa79f; }
+.map-pin.empty text { fill: #7c8a82; }
+
+.map-page .crumb-step { display: inline-flex; align-items: center; gap: 8px; }
+.map-side h1 { margin: 8px 0 12px; color: #173d35; font: 700 clamp(30px, 3.6vw, 42px)/1.06 'Playfair Display', Georgia, serif; letter-spacing: -1.5px; }
+.map-side-text { margin: 0; color: #68776f; font-size: 13px; line-height: 1.7; }
+.map-side-stat { margin: 22px 0; padding: 18px; background: #173d35; color: #fffdfa; display: flex; align-items: center; gap: 14px; }
+.map-side-stat b { font: 700 42px/1 'Playfair Display', Georgia, serif; color: #e9bd61; }
+.map-side-stat span { font-size: 11px; line-height: 1.45; color: rgba(255,253,248,.8); }
+.map-page .materials-heading { margin-top: 40px; }
+
+@media (max-width: 900px) {
+}
+
+/* Масштабирование карты */
+.map-svg { cursor: grab; touch-action: none; }
+.map-svg.zoomed { cursor: grab; }
+.map-svg:active { cursor: grabbing; }
+.globe-stage.flat { position: relative; }
+.map-zoom { position: absolute; right: 14px; top: 14px; display: grid; gap: 6px; }
+.map-zoom button { width: 34px; height: 34px; border: 1px solid #ced7c9; background: rgba(255,253,248,.94); color: #2c4a40; font-size: 17px; font-weight: 800; display: grid; place-items: center; }
+.map-zoom button:hover { border-color: #b3533b; color: #b3533b; }
+.map-zoom .zoom-reset { font-size: 15px; }
+.materials-more { color: #8a958e; font: 11px 'DM Mono', monospace; white-space: nowrap; }
+.map-pin.current { cursor: default; }
+.map-pin.current circle { fill: #173d35; }
+
+/* Карта уехала под список народов, поэтому название места вынесено наверх страницы. */
+
+
+/* Во всю ширину страницы карта получалась около семисот пикселей высотой —
+   ограничиваем, чтобы под ней сразу были видны материалы. */
+.globe-stage.flat .globe-svg { max-width: 680px; }
+
+/* Оформление карты: тёплая бумага вместо ровной заливки. */
+.map-pin circle:not(.pin-halo) { stroke: #fffdf8; stroke-width: 2; }
+
+/* Реки и рельеф рисуются по настоящим координатам, поэтому масштабируются вместе с картой. */
+
+/* Светлая зелёная гамма — та же, что была у прежней карты на главной. */
+.map-bg { fill: #edf0e9; }
+.map-country { fill: url(#map-land); stroke: #9cb198; stroke-width: 1.2; stroke-linejoin: round; }
+.map-country-shadow { fill: #d3dfcf; stroke: none; }
+.map-frame { fill: none; stroke: #cfd6c8; stroke-width: 2; }
+.map-rivers path { fill: none; stroke: #7fb0c6; stroke-linecap: round; stroke-linejoin: round; opacity: .8; }
+.relief-ridge { fill: #dfd9bf; stroke: #cfc9ac; stroke-width: .7; opacity: .42; }
+.relief-forest { fill: #c3d7ba; stroke: #aec6a4; stroke-width: .7; opacity: .45; }
+
+/* Страница карты повторяет компоновку главной: карта слева, сведения справа. */
+.map-layout { margin-top: 26px; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 30px; align-items: start; }
+.map-panel { height: fit-content; }
+.map-panel h3 { margin: 12px 0 10px; color: #173d35; font: 700 26px/1.15 'Playfair Display', Georgia, serif; }
+.map-panel > p { color: #68776f; font-size: 12px; line-height: 1.65; margin: 0; }
+.map-panel .region-stat { margin: 18px 0; }
+.map-panel .outline-button { margin-top: 16px; }
+.picker-open { margin-top: 10px; display: inline-flex; align-items: center; gap: 7px; }
+.map-page .materials-heading { margin-top: 44px; }
+
+.picker-list button:hover { border-color: #b5533b; }
+
+@media (max-width: 900px) {
+  .map-layout { grid-template-columns: 1fr; }
+}
+
+/* В двухколоночной раскладке карта занимает всю левую колонку —
+   по высоте выходит примерно вровень с панелью справа. */
+.map-layout .globe-stage.flat .globe-svg { max-width: none; }
+.map-layout .globe-stage.flat { gap: 10px; }
+
+/* Подсказка о метке под курсором — поверх карты, чтобы страница не прыгала. */
+.globe-caption.floating { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); min-height: 0; padding: 9px 16px; background: rgba(255,253,248,.95); border: 1px solid #ced7c9; box-shadow: 0 6px 16px rgba(23,61,53,.12); pointer-events: none; white-space: nowrap; }
+.globe-caption.floating strong { font-size: 16px; }
+
+/* Населённый пункт: карты нет, поэтому заголовок во всю ширину. */
+.map-head { margin-top: 26px; display: flex; justify-content: space-between; align-items: end; gap: 36px; padding-bottom: 28px; border-bottom: 1px solid #d9d3c8; }
+.map-head > div:first-child { max-width: 640px; }
+.map-head h1 { margin: 8px 0 12px; color: #173d35; font: 700 clamp(32px, 4vw, 46px)/1.06 'Playfair Display', Georgia, serif; letter-spacing: -1.8px; }
+.map-head .map-side-text { margin: 0; color: #68776f; font-size: 13px; line-height: 1.7; }
+.map-head-side { display: grid; gap: 10px; justify-items: end; flex-shrink: 0; }
+.map-head .map-side-stat { margin: 0; }
+.map-head .outline-button { margin-top: 0; width: max-content; }
+
+@media (max-width: 760px) {
+  .map-head { flex-direction: column; align-items: start; gap: 18px; }
+  .map-head-side { justify-items: start; }
+}
+
+/* Планету крутят рукой — показываем это курсором. */
+.globe-stage .globe-svg { cursor: grab; touch-action: none; }
+.globe-stage .globe-svg.dragging { cursor: grabbing; }
+.globe-stage .globe-svg { user-select: none; -webkit-user-select: none; }
+.globe-stage .globe-svg * { user-select: none; }
+
+/* Подписи на карте: геометрический гротеск с лёгкой разрядкой —
+   читается мелким кеглем и отличается от текста страницы. */
+.map-pin text { fill: #1d3b33; font: 600 12.5px/1 'Space Grotesk', 'Manrope', system-ui, sans-serif; letter-spacing: .2px; text-anchor: middle; paint-order: stroke; stroke: #edf0e9; stroke-width: 4; stroke-linejoin: round; }
+.map-pin .pin-count { fill: #9a6236; font: 500 11px/1 'Space Grotesk', monospace; letter-spacing: .6px; stroke-width: 3.5; }
+.map-pin:hover text { fill: #a6472f; }
+.globe-caption.floating strong { font-family: 'Space Grotesk', 'Manrope', system-ui, sans-serif; font-weight: 600; letter-spacing: .1px; }
+
+/* Окно выбора народа. Селекторы намеренно длиннее обычного: общие правила модалки
+   (.modal-content label / input) перебивали короткие и ломали строку поиска. */
+.people-picker .modal-content { gap: 14px; }
+.people-picker .modal-content label.picker-search {
+  display: flex; align-items: center; gap: 10px; padding: 0 12px;
+  border: 1px solid #d9d4ca; background: #fff;
+}
+.people-picker .modal-content label.picker-search:focus-within { border-color: #b5533b; box-shadow: 0 0 0 3px rgba(181, 83, 59, .12); }
+.people-picker .modal-content .picker-search > svg { flex: 0 0 auto; color: #b5533b; }
+.people-picker .modal-content .picker-search input {
+  flex: 1; min-width: 0; width: auto; height: 44px;
+  border: 0; padding: 0; background: transparent; outline: 0;
+  color: #173d35; font-size: 14px; font-weight: 400;
+}
+.people-picker .modal-content .picker-search > button {
+  flex: 0 0 auto; width: 24px; height: 24px; padding: 0;
+  border: 0; background: #efeade; color: #7e8983;
+  display: grid; place-items: center;
+}
+.people-picker .modal-content .picker-search > button:hover { background: #e3ddd0; color: #b5533b; }
+
+.people-picker .picker-list { display: grid; gap: 7px; max-height: 340px; overflow-y: auto; padding-right: 2px; }
+.people-picker .picker-list > button {
+  width: 100%; display: grid; grid-template-columns: 11px minmax(0, 1fr) auto 16px;
+  align-items: center; gap: 13px; padding: 12px 13px;
+  border: 1px solid #e3ddd2; background: #fffdfa; text-align: left;
+}
+.people-picker .picker-list > button:hover { border-color: #b5533b; background: #fff; }
+.people-picker .picker-list i { width: 11px; height: 11px; border-radius: 50%; }
+.people-picker .picker-list strong { display: block; color: #173d35; font: 600 15px/1.2 'Space Grotesk', 'Manrope', system-ui, sans-serif; }
+.people-picker .picker-list small { display: block; margin-top: 3px; color: #8a958e; font-size: 11px; }
+.people-picker .picker-list b { color: #9f5c44; font: 11px 'DM Mono', monospace; white-space: nowrap; }
+.people-picker .picker-list svg { color: #b5533b; }
+.people-picker .picker-empty { margin: 0; padding: 18px; background: #efeade; color: #68776f; font-size: 12px; line-height: 1.6; }
+
+
+/* Промежуток только между блоками: подпись остаётся прижатой к своему полю. */
+.form-grid { gap: 16px; }
+
+/* У .form-grid были заданы колонки и gap, но не было display: grid — элемент оставался
+   обычным блоком, поэтому поля шли в столбик вплотную, а промежуток не работал вовсе. */
+.editor-context .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 26px 24px; }
+@media (max-width: 900px) { .editor-context .form-grid { grid-template-columns: 1fr; gap: 22px; } }
+
+/* Шаги занимают всю ширину страницы — как заголовок и переключатель шагов над ними. */
+.editor-context, .editor-publish { max-width: none; width: 100%; }
+/* Строки согласий при этом не растягиваем: читать длинную строку неудобно. */
+.editor-publish .check, .editor-publish .notice { max-width: 860px; }
