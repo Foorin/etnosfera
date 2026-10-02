@@ -123,9 +123,9 @@ export function ProfileSettings({ account, postCount, collectionCount, onCancel,
           <span className="switch" aria-hidden="true"><i /></span>
         </button>
         <label className="editor-field">Язык интерфейса
-          <select value={language} onChange={(event) => setLanguage(event.target.value)}>
+          <span className="field-hint">Перевод интерфейса на марийский готовится — пока доступен русский.</span>
+          <select value={language} onChange={(event) => setLanguage(event.target.value)} disabled>
             <option>Русский</option>
-            <option>Марийский</option>
           </select>
         </label>
       </section>

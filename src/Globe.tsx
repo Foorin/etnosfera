@@ -33,6 +33,19 @@ export function Globe({ ids, onGo }: {
   const spin = useRef<{ x: number; y: number; rotation: [number, number] } | null>(null)
   const [dragging, setDragging] = useState(false)
   const frame = useRef(0)
+  const wheelRef = useRef<(event: WheelEvent) => void>(() => {})
+
+  // Колесо слушаем на самом элементе (React вешает onWheel пассивно, и preventDefault
+  // в нём не работает). Подписка живёт здесь, выше ветвления: если объявить её после
+  // `if (isEarth) return`, при переходе планета ↔ карта у компонента меняется число
+  // хуков и React падает с «Rendered more hooks than during the previous render».
+  useEffect(() => {
+    const element = mapRef.current
+    if (!element) return
+    const handler = (event: WheelEvent) => wheelRef.current(event)
+    element.addEventListener('wheel', handler, { passive: false })
+    return () => element.removeEventListener('wheel', handler)
+  }, [isEarth])
 
   // При переходе на другой уровень масштаб и сдвиг сбрасываются: иначе новая карта
   // открывалась бы увеличенной и сдвинутой от прошлого разглядывания.
@@ -245,12 +258,9 @@ export function Globe({ ids, onGo }: {
     setZoom(next)
   }
 
-  useEffect(() => {
-    const element = mapRef.current
-    if (!element) return
-    element.addEventListener('wheel', onWheel, { passive: false })
-    return () => element.removeEventListener('wheel', onWheel)
-  })
+  // Актуальный обработчик держим в ссылке: сам слушатель подписывается выше,
+  // до ветвления, иначе число хуков у планеты и у карты расходится.
+  wheelRef.current = onWheel
 
   return <div className="globe-stage flat">
     <svg

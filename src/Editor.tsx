@@ -17,9 +17,10 @@ export const MATERIAL_TYPES = [
 
 // Редактор живёт на отдельной странице, а не в модальном окне: сказку или быличку
 // в окно размером с диалог не напишешь, а тексты здесь бывают длинные.
-export function EditorPage({ post, regionNames, onCancel, onSaveDraft, onPublish }: {
+export function EditorPage({ post, regionNames, settlementNames, onCancel, onSaveDraft, onPublish }: {
   post: UserPost
   regionNames: string[]
+  settlementNames: string[]
   onCancel: () => void
   onSaveDraft: (post: UserPost) => void
   onPublish: (post: UserPost) => void
@@ -36,6 +37,8 @@ export function EditorPage({ post, regionNames, onCancel, onSaveDraft, onPublish
   const [region, setRegion] = useState(post.region)
   const [topic, setTopic] = useState(TOPICS.find((item) => item.slug === post.topic)?.title ?? TOPICS[0].title)
   const [type, setType] = useState(post.type)
+  const [language, setLanguage] = useState(post.languages ?? 'Русский')
+  const [place, setPlace] = useState(post.place ?? '')
   const [galleryFiles, setGalleryFiles] = useState<File[]>([])
   const [attachmentFiles, setAttachmentFiles] = useState<File[]>([])
   const [rights, setRights] = useState(false)
@@ -65,6 +68,8 @@ export function EditorPage({ post, regionNames, onCancel, onSaveDraft, onPublish
       people,
       region,
       type,
+      languages: language,
+      place: place.trim(),
       topic: topicSlug,
       image: topicSlug,
     }
@@ -211,8 +216,8 @@ export function EditorPage({ post, regionNames, onCancel, onSaveDraft, onPublish
         <SearchSelect label="Регион" placeholder="Введите регион" options={regionNames} value={region} onPick={setRegion} />
         <SearchSelect label="Тема" placeholder="Введите тему" options={TOPICS.map((item) => item.title)} value={topic} onPick={setTopic} />
         <SearchSelect label="Формат" placeholder="Введите формат" options={MATERIAL_TYPES} value={type} onPick={setType} />
-        <SearchSelect label="Язык" placeholder="Введите язык" options={['Русский', 'Марийский', 'Татарский', 'Чувашский', 'Удмуртский', 'Башкирский']} />
-        <SearchSelect label="Населённый пункт" placeholder="Введите название" options={['Йошкар-Ола', 'Сернур', 'Морки', 'Казань', 'Арск', 'Глазов', 'Белорецк']} />
+        <SearchSelect label="Язык" placeholder="Введите язык" options={['Русский', 'Марийский', 'Татарский', 'Чувашский', 'Удмуртский', 'Башкирский']} value={language} onPick={setLanguage} />
+        <SearchSelect label="Населённый пункт" placeholder="Введите название" options={settlementNames} value={place} onPick={setPlace} />
       </div>
       <div className="notice"><BookOpen size={20} /><p>Народ и регион — независимые признаки: материал может относиться сразу к нескольким. Точные координаты частных домов округляются автоматически.</p></div>
     </div>}

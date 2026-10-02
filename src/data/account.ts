@@ -15,6 +15,9 @@ export type UserPost = {
   materialSlug?: string
   // Портфолио собирается вручную: по ТЗ автор сам выбирает, какие работы в нём показать.
   inPortfolio?: boolean
+  // Язык и населённый пункт: раньше оба выбирались в редакторе, но терялись при сохранении.
+  languages?: string
+  place?: string
   // Тексты материала — те же части, что читатель видит на странице публикации.
   lead?: string
   summary?: string
@@ -34,6 +37,8 @@ export const EMPTY_POST: UserPost = {
   date: 'не отправлен',
   image: 'family',
   inPortfolio: false,
+  languages: 'Русский',
+  place: '',
   lead: '',
   summary: '',
   body: '',

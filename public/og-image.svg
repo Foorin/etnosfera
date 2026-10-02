@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#173d35"/>
+  <g fill="none" stroke="#e9bd61" stroke-width="14" opacity="0.5">
+    <rect x="900" y="60" width="120" height="120" transform="rotate(45 960 120)"/>
+    <rect x="1020" y="300" width="120" height="120" transform="rotate(45 1080 360)"/>
+    <rect x="860" y="430" width="120" height="120" transform="rotate(45 920 490)"/>
+  </g>
+  <circle cx="1010" cy="315" r="150" fill="#b5533b" opacity="0.35"/>
+  <text x="90" y="250" fill="#fffdfa" font-family="Georgia, serif" font-size="92" font-weight="700">ЭтноСфера</text>
+  <text x="90" y="330" fill="#e9bd61" font-family="system-ui, sans-serif" font-size="38">Цифровой атлас народов России</text>
+  <text x="90" y="420" fill="rgba(255,253,248,0.78)" font-family="system-ui, sans-serif" font-size="28">Карта, языки, песни, ремёсла и семейная память —</text>
+  <text x="90" y="462" fill="rgba(255,253,248,0.78)" font-family="system-ui, sans-serif" font-size="28">от планеты до отдельного села</text>
+  <rect x="90" y="520" width="250" height="4" fill="#b5533b"/>
+</svg>

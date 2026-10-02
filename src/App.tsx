@@ -42,6 +42,7 @@ import { EditorPage } from './Editor'
 import { ProfileSettings } from './ProfileSettings'
 import { Globe } from './Globe'
 import { PeoplePicker } from './PeoplePicker'
+import { GlobalSearch } from './GlobalSearch'
 import type { PeopleRow } from './PeoplePicker'
 import { RUSSIA, materialsAtPlace, pathToPlace, placeById } from './data/geo'
 import type { Place } from './data/geo'
@@ -218,13 +219,14 @@ function App() {
   const [isCollectionOpen, setIsCollectionOpen] = useState(false)
   const [editingCollection, setEditingCollection] = useState<UserCollection | null>(null)
   const [peoplePicker, setPeoplePicker] = useState<{ title: string; rows: PeopleRow[]; region: Region | null } | null>(null)
+  const [catalogRegion, setCatalogRegion] = useState('Все регионы')
+  const [catalogGroup, setCatalogGroup] = useState('Все группы')
   const [collectingMaterial, setCollectingMaterial] = useState<Material | null>(null)
   const [successNote, setSuccessNote] = useState<{ title: string; text: string } | null>(null)
   const [myPosts, setMyPosts] = useState<UserPost[]>([])
   const [myCollections, setMyCollections] = useState<UserCollection[]>([])
   const [profileTab, setProfileTab] = useState<'portfolio' | 'posts' | 'collections'>('portfolio')
   const [isMenuOpen, setIsMenuOpen] = useState(false)
-  const [language, setLanguage] = useState('RU')
   const [location, setLocation] = useState<Location>(parseHash)
 
   const route = location.route
@@ -476,9 +478,6 @@ function App() {
           <button className={route === 'profile' ? 'active' : ''} onClick={() => withAccount(() => navigate('profile'))}>Моё портфолио</button>
         </nav>
         <div className="header-actions">
-          <button className="language" onClick={() => setLanguage(language === 'RU' ? 'МАР' : 'RU')} aria-label="Сменить язык">
-            <Languages size={16} /> {language}
-          </button>
           <button className="publish-button" onClick={() => withAccount(() => openEditor({ ...EMPTY_POST }))}>
             <Upload size={16} /> Добавить материал
           </button>
@@ -499,15 +498,17 @@ function App() {
           <div className="eyebrow"><Sparkles size={15} /> Цифровой атлас культурной памяти</div>
           <h1>Эти голоса звучат <em>по всему миру.</em></h1>
           <p>Народы России живут не только в России. Начните с планеты и дойдите до отдельного села — до историй, языков и традиций, которые сохранили люди.</p>
-          <label className="search-box">
-            <Search size={20} />
-            <input placeholder="Найти народ, место, историю или слово" />
-            <kbd>Enter</kbd>
-          </label>
+          <GlobalSearch
+            onOpenMaterial={openMaterial}
+            onOpenPeople={(name) => openEthnos(name)}
+            onOpenPlace={(_place, path) => goPlace(path)}
+            onOpenTopic={(slug) => openTopic(null, slug)}
+          />
+          {/* Цифры считаются из данных: раньше здесь стояли «1 248 / 34 / 19», не совпадавшие ни с чем. */}
           <div className="hero-meta">
-            <span><b>1 248</b> материалов</span>
-            <span><b>34</b> народа</span>
-            <span><b>19</b> регионов</span>
+            <span><b>{MATERIALS.length}</b> {materialsWord(MATERIALS.length).split(' ')[1]}</span>
+            <span><b>{PEOPLES.length}</b> {PEOPLES.length === 6 ? 'народов' : 'народа'}</span>
+            <span><b>{RUSSIA.children?.length ?? 0}</b> региона</span>
           </div>
         </div>
         <div className="hero-art" aria-label="Орнамент, вдохновленный народными традициями">
@@ -526,14 +527,13 @@ function App() {
             <p className="kicker">От планеты до села</p>
             <h2>Выберите точку на карте мира</h2>
           </div>
-          <button className="text-button">Весь каталог <ArrowRight size={17} /></button>
+          <button className="text-button" onClick={() => navigate('peoples')}>Весь каталог <ArrowRight size={17} /></button>
         </div>
 
         <div className="atlas-layout">
           <div className="map-shell">
             <div className="map-toolbar">
-              <span><Globe2 size={16} /> Все регионы</span>
-              <button><Filter size={15} /> Фильтры</button>
+              <span><Globe2 size={16} /> Планету можно крутить мышью</span>
             </div>
             <Globe ids={[]} onGo={goPlace} />
           </div>
@@ -566,7 +566,6 @@ function App() {
             <p className="kicker">Народы России</p>
             <h2>Каждая культура - отдельный мир</h2>
           </div>
-          <div className="slider-controls"><button>←</button><button>→</button></div>
         </div>
         <div className="people-cards">
           <article className="people-card mari-card">
@@ -599,7 +598,7 @@ function App() {
             <p className="kicker">Новые материалы</p>
             <h2>{selectedPeople === 'Все народы' ? 'Истории, сохранённые людьми' : `Материалы: ${selectedPeople}`}</h2>
           </div>
-          <button className="text-button">Смотреть все <ArrowRight size={17} /></button>
+          <button className="text-button" onClick={() => goPlace(['ru'])}>Смотреть все <ArrowRight size={17} /></button>
         </div>
         <div className="publication-grid">
           {(selectedPeople === 'Все народы'
@@ -627,7 +626,7 @@ function App() {
           <p className="kicker">Исследуйте по-своему</p>
           <h2>Найдите нить, за которой хочется идти</h2>
           <p>Выбирайте тему, слушайте голоса, собирайте материалы в личные коллекции и создавайте своё портфолио.</p>
-          <button className="dark-button" onClick={() => navigate('peoples')}>Все темы <ArrowRight size={17} /></button>
+          <button className="dark-button" onClick={() => openTopic(null, TOPICS[0].slug)}>Открыть первую тему <ArrowRight size={17} /></button>
         </div>
         <div className="theme-grid">
           {TOPICS.slice(0, 4).map((topic) => (
@@ -648,7 +647,7 @@ function App() {
           <p>Загрузите семейный снимок, запись разговора или найденный документ. Укажите место, народ и источник - и ваша история станет частью живого атласа.</p>
           <div className="contribute-actions">
             <button className="publish-button" onClick={() => withAccount(() => openEditor({ ...EMPTY_POST }))}><Upload size={16} /> Добавить материал</button>
-            <a href="#collections">Как это работает <ArrowRight size={16} /></a>
+            <button className="text-button" onClick={() => navigate('collections')}>Смотреть коллекции <ArrowRight size={16} /></button>
           </div>
         </div>
       </section>
@@ -772,6 +771,7 @@ function App() {
       /> : route === 'editor' && account ? <EditorPage
         post={draft ?? myPosts.find((post) => post.id === location.material) ?? { ...EMPTY_POST }}
         regionNames={availableRegions.map((region) => region.name)}
+        settlementNames={RUSSIA.children?.flatMap((region) => region.children?.map((place) => place.name) ?? []) ?? []}
         onCancel={() => { setDraft(null); navigate('profile') }}
         onSaveDraft={saveDraft}
         onPublish={publishPost}
@@ -802,7 +802,7 @@ function App() {
         onEditCollection={setEditingCollection}
         onOpenSettings={() => navigate('settings')}
         onSignOut={signOut}
-      /> : <CorePages route={route} location={location} selectedRegion={selectedRegion} selectedEthnos={selectedEthnos} ethnosRegionFilter={ethnosRegionFilter} availableRegions={availableRegions} availablePublications={availablePublications} onNavigate={navigate} onSelectRegion={selectRegion} onOpenEthnos={openEthnos} onOpenTopic={openTopic} onOpenMaterial={openMaterial} onSetEthnosRegion={setEthnosRegion} onClearEthnosRegion={() => go({ ...location, region: null })} onCreateCollection={() => withAccount(() => setIsCollectionOpen(true))} collections={allCollections} onOpenCollection={openCollection} myCollections={myCollections} onSaveToCollection={(material) => withAccount(() => setCollectingMaterial(material))} onSaveCollection={(collection) => withAccount(() => saveCollectionToMine(collection))} onEditCollection={setEditingCollection} isMine={(collection) => myCollections.some((item) => item.id === collection.id)} />}
+      /> : <CorePages route={route} location={location} selectedRegion={selectedRegion} selectedEthnos={selectedEthnos} ethnosRegionFilter={ethnosRegionFilter} availableRegions={availableRegions} availablePublications={availablePublications} onNavigate={navigate} onSelectRegion={selectRegion} onOpenEthnos={openEthnos} onOpenTopic={openTopic} onOpenMaterial={openMaterial} onSetEthnosRegion={setEthnosRegion} onClearEthnosRegion={() => go({ ...location, region: null })} onCreateCollection={() => withAccount(() => setIsCollectionOpen(true))} collections={allCollections} onOpenCollection={openCollection} catalogRegion={catalogRegion} catalogGroup={catalogGroup} onCatalogRegion={setCatalogRegion} onCatalogGroup={setCatalogGroup} myCollections={myCollections} onSaveToCollection={(material) => withAccount(() => setCollectingMaterial(material))} onSaveCollection={(collection) => withAccount(() => saveCollectionToMine(collection))} onEditCollection={setEditingCollection} isMine={(collection) => myCollections.some((item) => item.id === collection.id)} />}
 
       <footer>
         <div className="brand footer-brand"><span className="brand-mark"><i /><i /><i /><i /></span><span>этносфера</span></div>
@@ -909,6 +909,10 @@ function CorePages({
   onCreateCollection,
   collections,
   onOpenCollection,
+  catalogRegion,
+  catalogGroup,
+  onCatalogRegion,
+  onCatalogGroup,
   myCollections,
   onSaveToCollection,
   onSaveCollection,
@@ -932,6 +936,10 @@ function CorePages({
   onCreateCollection: () => void
   collections: UserCollection[]
   onOpenCollection: (collection: UserCollection) => void
+  catalogRegion: string
+  catalogGroup: string
+  onCatalogRegion: (value: string) => void
+  onCatalogGroup: (value: string) => void
   myCollections: UserCollection[]
   onSaveToCollection: (material: Material) => void
   onSaveCollection: (collection: UserCollection) => void
@@ -939,6 +947,12 @@ function CorePages({
   isMine: (collection: UserCollection) => boolean
 }) {
   if (route === 'peoples') {
+    // Фильтры раньше принимали выбор и не влияли ни на что — теперь каталог сокращается.
+    const groups = ['Все группы', ...new Set(PEOPLES.map((people) => people.group))]
+    const filtered = PEOPLES.filter((people) =>
+      (catalogGroup === 'Все группы' || people.group === catalogGroup)
+      && (catalogRegion === 'Все регионы' || countForPeople(people.name, catalogRegion) > 0))
+
     return <section className="inner-page directory-page">
       <div className="page-intro">
         <p className="kicker">Каталог народов</p>
@@ -948,16 +962,39 @@ function CorePages({
       <div className="directory-layout">
         <aside className="directory-filter">
           <span className="filter-title"><ListFilter size={16} /> Найти в каталоге</span>
-          <SearchSelect label="Регион" placeholder="Введите регион" options={['Все регионы', 'Республика Марий Эл', 'Республика Татарстан', 'Удмуртская Республика', 'Республика Башкортостан']} />
-          <SearchSelect label="Языковая группа" placeholder="Введите группу" options={['Все группы', 'Финно-угорские языки', 'Тюркские языки', 'Славянские языки']} />
+          <SearchSelect
+            label="Регион"
+            placeholder="Введите регион"
+            options={['Все регионы', ...availableRegions.map((region) => region.name)]}
+            value={catalogRegion}
+            onPick={onCatalogRegion}
+          />
+          <SearchSelect
+            label="Языковая группа"
+            placeholder="Введите группу"
+            options={groups}
+            value={catalogGroup}
+            onPick={onCatalogGroup}
+          />
+          {(catalogRegion !== 'Все регионы' || catalogGroup !== 'Все группы') && (
+            <button className="text-button" onClick={() => { onCatalogRegion('Все регионы'); onCatalogGroup('Все группы') }}>
+              <X size={14} /> Сбросить фильтры
+            </button>
+          )}
           <div className="filter-note"><Sparkles size={17} /> Выберите народ, чтобы увидеть материалы из всех регионов России.</div>
         </aside>
         <div className="ethnos-directory">
-          {PEOPLES.map((people) => <button className="directory-card" key={people.slug} onClick={() => onOpenEthnos(people.name)}>
-            <span className={`directory-pattern pattern-${people.tone}`}><i /><i /><i /><i /></span>
-            <div><small>{people.selfName}</small><h2>{people.name}</h2><p>{people.group}</p></div>
-            <span className="directory-count">{materialsWord(countForPeople(people.name))}</span><ArrowRight size={18} />
-          </button>)}
+          {filtered.length > 0
+            ? filtered.map((people) => <button className="directory-card" key={people.slug} onClick={() => onOpenEthnos(people.name, catalogRegion === 'Все регионы' ? null : availableRegions.find((region) => region.name === catalogRegion) ?? null)}>
+                <span className={`directory-pattern pattern-${people.tone}`}><i /><i /><i /><i /></span>
+                <div><small>{people.selfName}</small><h2>{people.name}</h2><p>{people.group}</p></div>
+                <span className="directory-count">{materialsWord(countForPeople(people.name, catalogRegion === 'Все регионы' ? null : catalogRegion))}</span><ArrowRight size={18} />
+              </button>)
+            : <div className="empty-note">
+                <Sparkles size={18} />
+                <span>По этим условиям народов не нашлось. Снимите один из фильтров.</span>
+                <button className="outline-button" onClick={() => { onCatalogRegion('Все регионы'); onCatalogGroup('Все группы') }}>Сбросить фильтры</button>
+              </div>}
         </div>
       </div>
     </section>
@@ -1067,10 +1104,10 @@ function CorePages({
         <article className="material-story"><p className="lead">{material.lead}</p><p>{material.intro}</p><h2>Как собирался материал</h2><p>{material.collected}</p><div className="quote-note"><BookOpen size={19} /><span>Источник: {material.source}</span></div></article>
         <aside className="material-aside">
           {material.audio
-            ? <div className="audio-card"><span className="audio-label">Аудиозапись</span><button><Play size={18} fill="currentColor" /></button><strong>{material.audio.title}</strong><small>{material.audio.duration}</small><div className="wave" /></div>
+            ? <div className="audio-card"><span className="audio-label">Аудиозапись</span><button className="planned" disabled title="Проигрывание записи появится в рабочей версии" aria-label="Воспроизвести запись"><Play size={18} fill="currentColor" /></button><strong>{material.audio.title}</strong><small>{material.audio.duration}</small><div className="wave" /></div>
             : <div className="files-card"><span className="audio-label">Прикреплённые файлы</span><span className="file-row"><FileText size={16} /> Расшифровка.docx <small>830 КБ</small></span><span className="file-row"><FileText size={16} /> Опись материалов.pdf <small>1,4 МБ</small></span></div>}
           <div className="material-meta"><span><MapPin size={16} /> {material.place}</span><span><Languages size={16} /> {material.languages}</span><span><FileText size={16} /> {material.type}</span></div>
-          <button className="download-button"><Download size={16} /> Скачать материалы</button>
+          <button className="download-button planned" disabled title="Скачивание файлов появится в рабочей версии"><Download size={16} /> Скачать материалы</button>
         </aside>
       </div>
       {related.length > 0 && <div className="material-related">
@@ -1106,7 +1143,7 @@ function CorePages({
             {isMine(collection)
               ? <button className="dark-button" onClick={() => onEditCollection(collection)}><Pencil size={16} /> Настройки подборки</button>
               : <button className="dark-button" onClick={() => onSaveCollection(collection)}><FolderHeart size={16} /> Сохранить подборку</button>}
-            <button className="outline-button"><Download size={16} /> Скачать материалы</button>
+            <button className="outline-button planned" disabled title="Скачивание файлов появится в рабочей версии"><Download size={16} /> Скачать материалы</button>
           </div>
         </div>
       </div>
@@ -1191,7 +1228,7 @@ function ProfilePage({
     {tab === 'portfolio' && (published.length > 0
       ? <div className="portfolio-layout">
           <div>
-            <div className="section-heading compact"><div><p className="kicker">Избранные работы</p><h2>Моё портфолио</h2></div><button className="download-button"><Download size={16} /> Скачать PDF</button></div>
+            <div className="section-heading compact"><div><p className="kicker">Избранные работы</p><h2>Моё портфолио</h2></div><button className="download-button planned" disabled title="Выгрузка портфолио в PDF появится в рабочей версии"><Download size={16} /> Скачать PDF</button></div>
             <div className="portfolio-list">{published.map((post, index) => <button key={post.id} onClick={() => post.materialSlug && onOpenMaterial(materialBySlug(post.materialSlug))}><b>0{index + 1}</b><span><strong>{post.title}</strong><small>{topicBySlug(post.topic).title} · {post.type}</small></span><em>{post.people}</em><ArrowRight size={17} /></button>)}</div>
           </div>
           <aside className="portfolio-side">
