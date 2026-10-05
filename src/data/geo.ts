@@ -6,6 +6,11 @@ export type Place = {
   id: string
   name: string
   kind: PlaceKind
+  // Код страны в наборе контуров world-atlas: по нему глобус подсвечивает нужную страну.
+  worldId?: string
+  // Название страны для привязки материалов. У России не указывается — там материалы
+  // привязаны к регионам.
+  countryName?: string
   // Долгота и широта — по ним ставится метка на карте и поворачивается глобус.
   coords: [number, number]
   description?: string
@@ -22,6 +27,7 @@ export const RUSSIA: Place = {
   id: 'ru',
   name: 'Россия',
   kind: 'country',
+  worldId: '643',
   coords: [99, 62],
   description: 'Материалы о народах России: языки, песни, ремёсла и семейная память.',
   children: [
@@ -101,8 +107,119 @@ export const RUSSIA: Place = {
   ],
 }
 
+// Народы России живут и за её пределами. Страны СНГ делим сразу на города:
+// дробить их на области в прототипе нет смысла, материалов там пока единицы.
+export const CIS: Place[] = [
+  {
+    id: 'kz',
+    name: 'Казахстан',
+    kind: 'country',
+    worldId: '398',
+    countryName: 'Казахстан',
+    coords: [68.0, 48.2],
+    description: 'Русские, татары и чуваши Казахстана: переселение, целина, городские общины.',
+    children: [
+      { id: 'petropavlovsk', name: 'Петропавловск', kind: 'settlement', coords: [69.15, 54.87], placeMatch: ['Петропавловск'] },
+      { id: 'almaty', name: 'Алматы', kind: 'settlement', coords: [76.89, 43.24], placeMatch: ['Алматы'] },
+      { id: 'akmola', name: 'Акмолинская область', kind: 'settlement', coords: [70.5, 51.5], placeMatch: ['Акмолинская'] },
+    ],
+  },
+  {
+    id: 'uz',
+    name: 'Узбекистан',
+    kind: 'country',
+    worldId: '860',
+    countryName: 'Узбекистан',
+    coords: [64.5, 41.4],
+    description: 'Татарская и башкирская общины Ташкента, сложившиеся во время эвакуации и позже.',
+    children: [
+      { id: 'tashkent', name: 'Ташкент', kind: 'settlement', coords: [69.24, 41.3], placeMatch: ['Ташкент'] },
+    ],
+  },
+  {
+    id: 'by',
+    name: 'Беларусь',
+    kind: 'country',
+    worldId: '112',
+    countryName: 'Беларусь',
+    coords: [27.95, 53.7],
+    description: 'Русские и удмурты Минска: дворовое пение и ремесло, привезённое с собой.',
+    children: [
+      { id: 'minsk', name: 'Минск', kind: 'settlement', coords: [27.56, 53.9], placeMatch: ['Минск'] },
+    ],
+  },
+  {
+    id: 'kg',
+    name: 'Киргизия',
+    kind: 'country',
+    worldId: '417',
+    countryName: 'Киргизия',
+    coords: [74.6, 41.2],
+    description: 'Русские Бишкека: дома, дворы и сады, которые застраивают заново.',
+    children: [
+      { id: 'bishkek', name: 'Бишкек', kind: 'settlement', coords: [74.6, 42.87], placeMatch: ['Бишкек'] },
+    ],
+  },
+  {
+    id: 'az',
+    name: 'Азербайджан',
+    kind: 'country',
+    worldId: '031',
+    countryName: 'Азербайджан',
+    coords: [47.6, 40.2],
+    description: 'Память о бакинских дворах, где русские семьи жили рядом с соседями многих языков.',
+    children: [
+      { id: 'baku', name: 'Баку', kind: 'settlement', coords: [49.87, 40.41], placeMatch: ['Баку'] },
+    ],
+  },
+  {
+    id: 'am',
+    name: 'Армения',
+    kind: 'country',
+    worldId: '051',
+    countryName: 'Армения',
+    coords: [44.9, 40.1],
+    description: 'Молоканские села в горах — русская община, живущая здесь с середины XIX века.',
+    children: [
+      { id: 'fioletovo', name: 'Фиолетово', kind: 'settlement', coords: [44.63, 40.73], placeMatch: ['Фиолетово'] },
+    ],
+  },
+  {
+    id: 'md',
+    name: 'Молдова',
+    kind: 'country',
+    worldId: '498',
+    countryName: 'Молдова',
+    coords: [28.5, 47.1],
+    description: 'Кишинёвская переписка, в которой видно, как менялся домашний язык.',
+    children: [
+      { id: 'kishinev', name: 'Кишинёв', kind: 'settlement', coords: [28.86, 47.01], placeMatch: ['Кишинёв'] },
+    ],
+  },
+  {
+    id: 'tj',
+    name: 'Таджикистан',
+    kind: 'country',
+    worldId: '762',
+    countryName: 'Таджикистан',
+    coords: [71.3, 38.6],
+    description: 'Душанбинский школьный альбом и судьбы класса, разъехавшегося по пяти странам.',
+    children: [
+      { id: 'dushanbe', name: 'Душанбе', kind: 'settlement', coords: [68.78, 38.56], placeMatch: ['Душанбе'] },
+    ],
+  },
+]
+
+export const COUNTRIES: Place[] = [RUSSIA, ...CIS]
+
+export function countryById(id: string) {
+  return COUNTRIES.find((country) => country.id === id)
+}
+
 export function materialsAtPlace(place: Place) {
-  if (place.kind === 'country') return MATERIALS
+  // Россия — корень атласа, в ней собраны все материалы, включая зарубежные.
+  if (place.id === 'ru') return MATERIALS.filter((material) => !material.country)
+  if (place.countryName) return MATERIALS.filter((material) => material.country === place.countryName)
   if (place.regionName) return MATERIALS.filter((material) => material.region === place.regionName)
   if (place.placeMatch) {
     return MATERIALS.filter((material) => place.placeMatch!.some((needle) => material.place.includes(needle)))
@@ -114,11 +231,13 @@ export function countAtPlace(place: Place) {
   return materialsAtPlace(place).length
 }
 
-// Путь от России до указанного места: нужен для хлебных крошек и для разбора адреса.
+// Путь от страны до указанного места: нужен для хлебных крошек и для разбора адреса.
+// Первый идентификатор — страна, дальше её уровни.
 export function pathToPlace(ids: string[]): Place[] {
-  const path: Place[] = [RUSSIA]
-  let current = RUSSIA
-  for (const id of ids) {
+  const start = countryById(ids[0] ?? 'ru') ?? RUSSIA
+  const path: Place[] = [start]
+  let current = start
+  for (const id of ids.slice(1)) {
     const next = current.children?.find((child) => child.id === id)
     if (!next) break
     path.push(next)

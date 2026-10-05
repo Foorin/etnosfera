@@ -1,5 +1,5 @@
 import { MATERIALS, PEOPLES, TOPICS, topicBySlug } from './data/content'
-import { RUSSIA, countAtPlace } from './data/geo'
+import { COUNTRIES, countAtPlace } from './data/geo'
 import type { Material } from './data/content'
 import type { Place } from './data/geo'
 
@@ -18,13 +18,13 @@ function matches(haystack: string, needle: string) {
   return text.split(/[\s,.;:()«»"'—-]+/).some((word) => word.startsWith(needle))
 }
 
-function flattenPlaces(place: Place, path: string[] = []): { place: Place; path: string[] }[] {
-  const here = place.id === 'ru' ? [{ place, path: ['ru'] }] : [{ place, path }]
-  const children = (place.children ?? []).flatMap((child) => flattenPlaces(child, [...(path.length ? path : ['ru']), child.id]))
-  return [...here, ...children]
+function flattenPlaces(place: Place, path: string[]): { place: Place; path: string[] }[] {
+  const children = (place.children ?? []).flatMap((child) => flattenPlaces(child, [...path, child.id]))
+  return [{ place, path }, ...children]
 }
 
-const ALL_PLACES = flattenPlaces(RUSSIA)
+// Поиск обходит все страны, а не только Россию, — иначе Алматы и Минск не найти.
+const ALL_PLACES = COUNTRIES.flatMap((country) => flattenPlaces(country, [country.id]))
 
 export function searchEverything(query: string, limit = 7): SearchHit[] {
   const needle = query.trim().toLocaleLowerCase()

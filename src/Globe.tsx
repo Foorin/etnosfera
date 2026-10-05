@@ -3,7 +3,7 @@ import type React from 'react'
 import { geoOrthographic, geoMercator, geoConicEqualArea, geoPath, geoCentroid } from 'd3-geo'
 import { feature } from 'topojson-client'
 import worldData from 'world-atlas/countries-110m.json'
-import { RELIEF, RIVERS, RUSSIA, countAtPlace, pathToPlace } from './data/geo'
+import { COUNTRIES, RELIEF, RIVERS, countAtPlace, pathToPlace } from './data/geo'
 
 type Feature = { type: string; id?: string | number; properties: { name?: string }; geometry: unknown }
 
@@ -11,7 +11,9 @@ type Feature = { type: string; id?: string | number; properties: { name?: string
 // этого хватает для глобуса и держит вес в разумных пределах.
 const world = worldData as unknown as { objects: { countries: unknown } }
 const countries = (feature(world as never, world.objects.countries as never) as unknown as { features: Feature[] }).features
-const RUSSIA_ID = '643'
+// Соответствие кода страны в контурах world-atlas и места в атласе: подсвечиваем
+// все страны, где есть материалы, а не только Россию.
+const BY_WORLD_ID = new Map(COUNTRIES.filter((country) => country.worldId).map((country) => [country.worldId!, country]))
 
 const SIZE = 440
 
@@ -20,7 +22,7 @@ export function Globe({ ids, onGo }: {
   onGo: (ids: string[]) => void
 }) {
   const isEarth = ids.length === 0
-  const path = useMemo(() => pathToPlace(ids.slice(1)), [ids])
+  const path = useMemo(() => pathToPlace(ids), [ids])
   const current = path[path.length - 1]
 
   const [rotation, setRotation] = useState<[number, number]>([-99, -30])
@@ -76,7 +78,7 @@ export function Globe({ ids, onGo }: {
       .translate([SIZE / 2, SIZE / 2])
       .rotate(rotation)
     const draw = geoPath(projection)
-    const russia = countries.find((item) => String(item.id) === RUSSIA_ID)
+    const home = countries.find((item) => BY_WORLD_ID.get(String(item.id))?.id === 'ru')
 
     // Планету можно крутить рукой: зажать и тянуть. Работает и пальцем на телефоне,
     // поэтому слушаем указатель, а не только мышь.
@@ -128,22 +130,22 @@ export function Globe({ ids, onGo }: {
         <circle cx={SIZE / 2} cy={SIZE / 2} r={SIZE / 2 - 8} fill="url(#globe-shade)" />
         <path d={draw({ type: 'Graticule', coordinates: [] } as never) ?? ''} />
         {countries.map((country, index) => {
-          const isRussia = String(country.id) === RUSSIA_ID
+          const place = BY_WORLD_ID.get(String(country.id))
           const d = draw(country as never)
           if (!d) return null
           return <path
             key={country.id != null ? String(country.id) : `country-${index}`}
             d={d}
-            className={isRussia ? 'globe-country has-materials' : 'globe-country'}
+            className={`globe-country${place ? ' has-materials' : ''}${place?.id === 'ru' ? ' home-country' : ''}`}
             onMouseEnter={() => {
               setSpinning(false)
-              setHovered({ name: isRussia ? 'Россия' : country.properties.name ?? '', count: isRussia ? countAtPlace(RUSSIA) : null })
+              setHovered({ name: place?.name ?? country.properties.name ?? '', count: place ? countAtPlace(place) : null })
             }}
-            onClick={() => { if (isRussia && !spin.current) onGo(['ru']) }}
+            onClick={() => { if (place && !spin.current) onGo([place.id]) }}
           />
         })}
-        {russia && (() => {
-          const [x, y] = projection(geoCentroid(russia as never)) ?? [0, 0]
+        {home && (() => {
+          const [x, y] = projection(geoCentroid(home as never)) ?? [0, 0]
           const visible = x > 0 && y > 0
           return visible ? <g className="globe-pin" transform={`translate(${x}, ${y})`} onClick={() => onGo(['ru'])}>
             <circle r={7} />
@@ -169,15 +171,20 @@ export function Globe({ ids, onGo }: {
   const children = current.children ?? []
   const pins = children.length > 0 ? children : [current]
   const isCountry = current.kind === 'country'
-  const russiaFeature = countries.find((item) => String(item.id) === RUSSIA_ID)
+  const countryPlace = path[0]
+  const countryFeature = countries.find((item) => String(item.id) === countryPlace.worldId)
 
   const W = SIZE * 1.6
   // Россия пересекает 180-й меридиан, и Меркатор растягивает её так, что карта уезжает вбок.
   // Коническая проекция с поворотом на 100° в.д. держит страну по центру без разрыва.
-  const projection = isCountry
+  // Коническая проекция с поворотом подобрана под Россию; для остальных стран берём Меркатор.
+  const projection = isCountry && countryPlace.id === 'ru'
     ? geoConicEqualArea().rotate([-52, 0]).parallels([52, 62])
     : geoMercator()
-  if (isCountry) {
+  if (isCountry && countryPlace.id !== 'ru' && countryFeature) {
+    // У стран СНГ меток одна-две, поэтому кадр задаёт контур страны, а не метки.
+    projection.fitExtent([[26, 32], [W - 26, SIZE - 32]], countryFeature as never)
+  } else if (isCountry) {
     // Все четыре республики — в Поволжье. Если вписать в кадр всю страну до Чукотки,
     // метки сливаются в одну точку. Поэтому открываем на той части, где есть материалы,
     // а контур страны уходит за края — отдалить можно колесом.
@@ -301,9 +308,9 @@ export function Globe({ ids, onGo }: {
       <rect width={W} height={SIZE} fill="url(#map-grid)" opacity="0.5" />
 
 
-      {isCountry && russiaFeature && <>
-        <path d={draw(russiaFeature as never) ?? ''} className="map-country-shadow" filter="url(#map-shadow)" />
-        <path d={draw(russiaFeature as never) ?? ''} className="map-country" />
+      {isCountry && countryFeature && <>
+        <path d={draw(countryFeature as never) ?? ''} className="map-country-shadow" filter="url(#map-shadow)" />
+        <path d={draw(countryFeature as never) ?? ''} className="map-country" />
       </>}
 
       {/* Возвышенности и леса — под реками, как на обычной карте. */}

@@ -35,7 +35,7 @@ import {
   Pencil,
   Star,
 } from 'lucide-react'
-import { MATERIALS, PEOPLES, TOPICS, countForPeople, countForRegion, countForTopic, materialBySlug, materialsFor, peopleByName, topicBySlug } from './data/content'
+import { MATERIALS, PEOPLES, TOPICS, countForPeople, countForRegion, countForTopic, materialBySlug, materialWhere, materialsFor, peopleByName, topicBySlug } from './data/content'
 import type { Material } from './data/content'
 import { SearchSelect } from './SearchSelect'
 import { EditorPage } from './Editor'
@@ -44,7 +44,7 @@ import { Globe } from './Globe'
 import { PeoplePicker } from './PeoplePicker'
 import { GlobalSearch } from './GlobalSearch'
 import type { PeopleRow } from './PeoplePicker'
-import { RUSSIA, materialsAtPlace, pathToPlace, placeById } from './data/geo'
+import { COUNTRIES, RUSSIA, countAtPlace, materialsAtPlace, pathToPlace, placeById } from './data/geo'
 import type { Place } from './data/geo'
 import { AddToCollectionModal, AuthModal, CollectionModal, SuccessNote } from './AccountModals'
 import { COLLECTION_COVERS, DEMO_ACCOUNT, DEMO_COLLECTIONS, DEMO_POSTS, EMPTY_POST, FEATURED_COLLECTION, PUBLIC_COLLECTIONS } from './data/account'
@@ -509,6 +509,7 @@ function App() {
             <span><b>{MATERIALS.length}</b> {materialsWord(MATERIALS.length).split(' ')[1]}</span>
             <span><b>{PEOPLES.length}</b> {PEOPLES.length === 6 ? 'народов' : 'народа'}</span>
             <span><b>{RUSSIA.children?.length ?? 0}</b> региона</span>
+            <span><b>{COUNTRIES.length}</b> стран</span>
           </div>
         </div>
         <div className="hero-art" aria-label="Орнамент, вдохновленный народными традициями">
@@ -541,16 +542,16 @@ function App() {
           {/* Панель описывает то, что отмечено на глобусе, — страну, а не один регион. */}
           <aside className="region-panel">
             <div className="panel-topline"><span>Отмечено на планете</span><Compass size={18} /></div>
-            <h3>Россия</h3>
-            <p>{RUSSIA.description}</p>
-            <div className="region-stat"><b>{MATERIALS.length}</b><span>публикаций<br />по всей стране</span></div>
+            <h3>Земля</h3>
+            <p>Народы России живут не только в России. Выберите страну на планете или в списке.</p>
+            <div className="region-stat"><b>{MATERIALS.length}</b><span>публикаций<br />в девяти странах</span></div>
             <div className="people-list">
-              <span className="list-label">Регионы с материалами</span>
-              {RUSSIA.children!.map((region) => (
-                <button className="people-row" onClick={() => goPlace(['ru', region.id])} key={region.id}>
-                  <i className={`tone-${region.tone ?? 'mari'}`} />
-                  <span>{shortRegion(region.name)}</span>
-                  <b>{countForRegion(region.regionName ?? '')}</b>
+              <span className="list-label">Страны с материалами</span>
+              {COUNTRIES.map((country) => (
+                <button className="people-row" onClick={() => goPlace([country.id])} key={country.id}>
+                  <i className={`tone-${country.tone ?? (country.id === 'ru' ? 'mari' : 'russian')}`} />
+                  <span>{country.name}</span>
+                  <b>{countAtPlace(country)}</b>
                   <ArrowRight size={15} />
                 </button>
               ))}
@@ -612,7 +613,7 @@ function App() {
                   <span className="media-tag"><Image size={14} /> {item.type}</span>
                 </div>
                 <div className="publication-body">
-                  <p>{item.region}</p>
+                  <p>{materialWhere(item)}</p>
                   <h3>{item.title}</h3>
                   <div className="publication-footer"><span>{item.author}</span><button aria-label="Открыть материал"><ArrowRight size={18} /></button></div>
                 </div>
@@ -655,7 +656,7 @@ function App() {
       </> : route === 'map' ? <section className="inner-page map-page">
         <div className="breadcrumbs">
           <button onClick={() => navigate('home')}>Земля</button>
-          {pathToPlace(location.place.slice(1)).map((step, index) => {
+          {pathToPlace(location.place).map((step, index) => {
             const isLast = index === location.place.length - 1
             return <span key={step.id} className="crumb-step">
               <span>/</span>
@@ -667,7 +668,7 @@ function App() {
         </div>
 
         {(() => {
-          const place = placeById(location.place.slice(1))
+          const place = placeById(location.place)
           const region = place.kind === 'region' ? availableRegions.find((item) => item.id === place.id) : null
           const rows: PeopleRow[] = place.kind === 'country'
             ? PEOPLES.map((people) => ({ name: people.name, tone: people.tone, group: people.group, count: countForPeople(people.name) }))
@@ -738,7 +739,7 @@ function App() {
         })()}
 
         {(() => {
-          const place = placeById(location.place.slice(1))
+          const place = placeById(location.place)
           const all = materialsAtPlace(place)
           const items = place.kind === 'country'
             // По стране берём по паре материалов от каждого региона — иначе в списке
@@ -1055,7 +1056,7 @@ function CorePages({
         {peopleName && <button className="text-button" onClick={() => onOpenTopic(null, topic.slug)}>Все народы <ArrowRight size={17} /></button>}
       </div>
       {items.length > 0
-        ? <div className="compact-publications">{items.map((item) => <button key={item.slug} onClick={() => onOpenMaterial(item)}><span className={`compact-image image-${item.image}`} /><span><small>{item.people} · {item.type}</small><strong>{item.title}</strong><em>{item.author} · {item.region}</em></span><ArrowRight size={17} /></button>)}</div>
+        ? <div className="compact-publications">{items.map((item) => <button key={item.slug} onClick={() => onOpenMaterial(item)}><span className={`compact-image image-${item.image}`} /><span><small>{item.people} · {item.type}</small><strong>{item.title}</strong><em>{item.author} · {materialWhere(item)}</em></span><ArrowRight size={17} /></button>)}</div>
         : <div className="empty-note">
             <Sparkles size={18} />
             <span>{regionName ? `В регионе «${regionName}» по этой теме пока нет материалов.` : 'В этой теме пока нет опубликованных материалов. Вы можете стать первым автором.'}</span>
@@ -1072,7 +1073,10 @@ function CorePages({
     const photoCount = Math.min(Math.max(material.photos ?? 3, 1), 3)
     const savedInCollection = myCollections.some((collection) => collection.items.includes(material.slug))
     // «Читайте дальше» держится того же региона, иначе из материала о Марий Эл уводило бы в другой край.
-    const related = materialsFor(material.people, null, material.region).filter((item) => item.slug !== material.slug).slice(0, 3)
+    const related = (material.country
+      ? MATERIALS.filter((item) => item.people === material.people && item.country === material.country)
+      : materialsFor(material.people, null, material.region)
+    ).filter((item) => item.slug !== material.slug).slice(0, 3)
 
     return <section className="inner-page material-page">
       <div className="breadcrumbs">
@@ -1083,7 +1087,7 @@ function CorePages({
         <span>{material.title}</span>
       </div>
       <div className="material-head">
-        <div><div className="material-tags"><span className={`ethnos-tag tag-${materialEthnos.tone}`}>{material.people} · {materialEthnos.selfName}</span><span className="soft-tag"><MapPin size={12} /> {material.region}</span><span className="soft-tag">{topic.title}</span></div><h1>{material.title}</h1><p>{material.intro}</p>
+        <div><div className="material-tags"><span className={`ethnos-tag tag-${materialEthnos.tone}`}>{material.people} · {materialEthnos.selfName}</span><span className="soft-tag"><MapPin size={12} /> {materialWhere(material)}</span><span className="soft-tag">{topic.title}</span></div><h1>{material.title}</h1><p>{material.intro}</p>
           <button
             className={`save-material${savedInCollection ? ' saved' : ''}`}
             onClick={() => onSaveToCollection(material)}
@@ -1111,7 +1115,7 @@ function CorePages({
         </aside>
       </div>
       {related.length > 0 && <div className="material-related">
-        <div className="region-subheading"><div><p className="kicker">Читайте дальше</p><h2>Ещё о народе «{material.people}» в {regionInPrepositional(material.region)}</h2></div><button className="text-button" onClick={() => onOpenEthnos(material.people, materialRegion)}>Все темы <ArrowRight size={17} /></button></div>
+        <div className="region-subheading"><div><p className="kicker">Читайте дальше</p><h2>Ещё о народе «{material.people}» {material.country ? `в ${material.country}` : `в ${regionInPrepositional(material.region)}`}</h2></div><button className="text-button" onClick={() => onOpenEthnos(material.people, materialRegion)}>Все темы <ArrowRight size={17} /></button></div>
         <div className="compact-publications">{related.map((item) => <button key={item.slug} onClick={() => onOpenMaterial(item)}><span className={`compact-image image-${item.image}`} /><span><small>{topicBySlug(item.topic).title} · {item.type}</small><strong>{item.title}</strong><em>{item.author}</em></span><ArrowRight size={17} /></button>)}</div>
       </div>}
     </section>
@@ -1155,7 +1159,7 @@ function CorePages({
 
       <div className="region-subheading materials-heading"><div><p className="kicker">Состав подборки</p><h2>Что внутри</h2></div></div>
       {items.length > 0
-        ? <div className="compact-publications">{items.map((item) => <button key={item.slug} onClick={() => onOpenMaterial(item)}><span className={`compact-image image-${item.image}`} /><span><small>{item.people} · {topicBySlug(item.topic).title}</small><strong>{item.title}</strong><em>{item.author} · {shortRegion(item.region)}</em></span><ArrowRight size={17} /></button>)}</div>
+        ? <div className="compact-publications">{items.map((item) => <button key={item.slug} onClick={() => onOpenMaterial(item)}><span className={`compact-image image-${item.image}`} /><span><small>{item.people} · {topicBySlug(item.topic).title}</small><strong>{item.title}</strong><em>{item.author} · {item.country ?? shortRegion(item.region)}</em></span><ArrowRight size={17} /></button>)}</div>
         : <div className="empty-note"><Sparkles size={18} /><span>В подборке пока нет материалов. Добавляйте их кнопкой «Добавить в коллекцию» на странице любой публикации.</span></div>}
     </section>
   }
