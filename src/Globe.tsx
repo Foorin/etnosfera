@@ -4,6 +4,7 @@ import { geoOrthographic, geoMercator, geoConicEqualArea, geoPath, geoCentroid }
 import { feature } from 'topojson-client'
 import worldData from 'world-atlas/countries-110m.json'
 import { COUNTRIES, RELIEF, RIVERS, countAtPlace, pathToPlace } from './data/geo'
+import type { Place } from './data/geo'
 
 type Feature = { type: string; id?: string | number; properties: { name?: string }; geometry: unknown }
 
@@ -17,9 +18,13 @@ const BY_WORLD_ID = new Map(COUNTRIES.filter((country) => country.worldId).map((
 
 const SIZE = 440
 
-export function Globe({ ids, onGo }: {
+export function Globe({ ids, onGo, selected, onSelect }: {
   ids: string[]
   onGo: (ids: string[]) => void
+  // На планете клик по стране не проваливает вглубь, а выбирает её — подробности
+  // показываются в панели рядом. У плоской карты этих пропсов нет.
+  selected?: string | null
+  onSelect?: (place: Place) => void
 }) {
   const isEarth = ids.length === 0
   const path = useMemo(() => pathToPlace(ids), [ids])
@@ -32,7 +37,8 @@ export function Globe({ ids, onGo }: {
   const [pan, setPan] = useState<[number, number]>([0, 0])
   const drag = useRef<{ x: number; y: number; pan: [number, number] } | null>(null)
   const mapRef = useRef<SVGSVGElement | null>(null)
-  const spin = useRef<{ x: number; y: number; rotation: [number, number] } | null>(null)
+  const spin = useRef<{ x: number; y: number; rotation: [number, number]; moved: boolean } | null>(null)
+  const justDragged = useRef(false)
   const [dragging, setDragging] = useState(false)
   const frame = useRef(0)
   const wheelRef = useRef<(event: WheelEvent) => void>(() => {})
@@ -58,8 +64,16 @@ export function Globe({ ids, onGo }: {
 
   // Планета вращается сама, пока на неё не навели курсор: так видно, что это глобус,
   // а не картинка, но прицелиться в страну она не мешает.
+  // Сняли выбор — планета снова оживает. Без этого она оставалась стоять,
+  // потому что самовращение было выключено ещё при наведении курсора.
   useEffect(() => {
-    if (!isEarth || !spinning || dragging) return
+    if (!selected) setSpinning(true)
+  }, [selected])
+
+  useEffect(() => {
+    // Пока страна выбрана, планета стоит: иначе выбранная страна уезжала бы
+    // из-под курсора, пока её читают в панели. Крутить можно правой кнопкой.
+    if (!isEarth || selected || !spinning || dragging) return
     let alive = true
     const tick = () => {
       if (!alive) return
@@ -70,23 +84,35 @@ export function Globe({ ids, onGo }: {
     }
     tick()
     return () => { alive = false; window.clearTimeout(frame.current) }
-  }, [isEarth, spinning, dragging])
+  }, [isEarth, spinning, dragging, selected])
 
   if (isEarth) {
+    const EARTH_W = SIZE * 1.6
     const projection = geoOrthographic()
-      .scale(SIZE / 2 - 8)
-      .translate([SIZE / 2, SIZE / 2])
+      .scale((SIZE / 2 - 8) * zoom)
+      .translate([EARTH_W / 2, SIZE / 2])
       .rotate(rotation)
     const draw = geoPath(projection)
-    const home = countries.find((item) => BY_WORLD_ID.get(String(item.id))?.id === 'ru')
+
+    // Планету тоже приближаем колесом. Больше четырёхкратного орфографическая проекция
+    // сильно искажает края, поэтому дальше не пускаем.
+    wheelRef.current = (event: WheelEvent) => {
+      event.preventDefault()
+      setZoom((current) => Math.min(4, Math.max(1, current * (event.deltaY < 0 ? 1.15 : 1 / 1.15))))
+    }
 
     // Планету можно крутить рукой: зажать и тянуть. Работает и пальцем на телефоне,
     // поэтому слушаем указатель, а не только мышь.
     const startSpin = (event: React.PointerEvent<SVGSVGElement>) => {
-      // Без этого браузер начинает своё перетаскивание картинки и выделение,
-      // и планета переставала слушаться левой кнопки.
-      event.preventDefault()
-      spin.current = { x: event.clientX, y: event.clientY, rotation }
+      // Мышью планету крутят правой кнопкой, левая остаётся за выбором страны —
+      // так не нужно угадывать, клик это был или поворот. Пальцем на телефоне
+      // кнопок нет, поэтому там крутит обычное касание.
+      // Отметку о прошлом перетаскивании снимаем до проверки кнопки: иначе после
+      // вращения правой кнопкой она оставалась поднятой и блокировала все клики левой.
+      justDragged.current = false
+      const byTouch = event.pointerType !== 'mouse'
+      if (!byTouch && event.button !== 2) return
+      spin.current = { x: event.clientX, y: event.clientY, rotation, moved: false }
       setDragging(true)
       setSpinning(false)
       try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* захват не обязателен */ }
@@ -96,6 +122,8 @@ export function Globe({ ids, onGo }: {
       if (!spin.current) return
       const rect = event.currentTarget.getBoundingClientRect()
       const perPixel = 0.34 * (SIZE / (rect.width || SIZE))
+      const shift = Math.hypot(event.clientX - spin.current.x, event.clientY - spin.current.y)
+      if (shift > 4) spin.current.moved = true
       const [lambda, phi] = spin.current.rotation
       setRotation([
         lambda + (event.clientX - spin.current.x) * perPixel,
@@ -104,16 +132,24 @@ export function Globe({ ids, onGo }: {
     }
 
     const stopSpin = () => {
+      // Клик приходит уже после pointerup, поэтому отметку о перетаскивании держим
+      // до следующего нажатия — иначе поворот планеты считался бы выбором страны.
+      if (spin.current?.moved) justDragged.current = true
       spin.current = null
       setDragging(false)
     }
 
-    return <div className="globe-stage" onMouseLeave={() => { if (!spin.current) { setSpinning(true); setHovered(null) } }}>
+    return <div className="globe-stage" onMouseLeave={() => {
+      setHovered(null)
+      // Возобновляем самовращение только если страна не выбрана.
+      if (!spin.current && !selected) setSpinning(true)
+    }}>
       <svg
-        viewBox={`0 0 ${SIZE} ${SIZE}`}
+        viewBox={`0 0 ${SIZE * 1.6} ${SIZE}`}
         className={`globe-svg${dragging ? ' dragging' : ''}`}
         role="img"
-        aria-label="Вращающаяся планета: выберите страну"
+        aria-label="Планета: нажмите на страну, чтобы выбрать её; правая кнопка вращает"
+        ref={mapRef}
         onPointerDown={startSpin}
         onPointerMove={moveSpin}
         onPointerUp={stopSpin}
@@ -127,7 +163,10 @@ export function Globe({ ids, onGo }: {
             <stop offset="100%" stopColor="#16352e" />
           </radialGradient>
         </defs>
-        <circle cx={SIZE / 2} cy={SIZE / 2} r={SIZE / 2 - 8} fill="url(#globe-shade)" />
+        {/* Шар-основа растёт вместе с континентами, иначе при приближении они
+            выползали бы за океан. */}
+        <rect width={EARTH_W} height={SIZE} className="earth-bg" />
+        <circle cx={EARTH_W / 2} cy={SIZE / 2} r={(SIZE / 2 - 8) * zoom} fill="url(#globe-shade)" />
         <path d={draw({ type: 'Graticule', coordinates: [] } as never) ?? ''} />
         {countries.map((country, index) => {
           const place = BY_WORLD_ID.get(String(country.id))
@@ -136,30 +175,35 @@ export function Globe({ ids, onGo }: {
           return <path
             key={country.id != null ? String(country.id) : `country-${index}`}
             d={d}
-            className={`globe-country${place ? ' has-materials' : ''}${place?.id === 'ru' ? ' home-country' : ''}`}
+            className={`globe-country${place ? ' has-materials' : ''}${place && place.id === selected ? ' selected' : ''}`}
             onMouseEnter={() => {
               setSpinning(false)
               setHovered({ name: place?.name ?? country.properties.name ?? '', count: place ? countAtPlace(place) : null })
             }}
-            onClick={() => { if (place && !spin.current) onGo([place.id]) }}
+            onClick={() => {
+              if (!place || justDragged.current) return
+              // Выбор показывается в панели рядом; на карту уводит кнопка оттуда.
+              if (onSelect) onSelect(place)
+              else onGo([place.id])
+            }}
           />
         })}
-        {home && (() => {
-          const [x, y] = projection(geoCentroid(home as never)) ?? [0, 0]
-          const visible = x > 0 && y > 0
-          return visible ? <g className="globe-pin" transform={`translate(${x}, ${y})`} onClick={() => onGo(['ru'])}>
-            <circle r={7} />
-            <circle r={13} className="pin-halo" />
-          </g> : null
-        })()}
       </svg>
+
+      <div className="map-zoom globe-zoom">
+        <button onClick={() => setZoom((value) => Math.min(4, value * 1.3))} aria-label="Приблизить">+</button>
+        <button onClick={() => setZoom((value) => Math.max(1, value / 1.3))} aria-label="Отдалить">−</button>
+        {zoom > 1 && <button className="zoom-reset" onClick={() => setZoom(1)} aria-label="Сбросить масштаб">↺</button>}
+      </div>
 
       <div className="globe-caption">
         {hovered
           ? <><strong>{hovered.name}</strong>{hovered.count !== null
               ? <span>{hovered.count} материалов · нажмите, чтобы открыть</span>
               : <span>материалов пока нет</span>}</>
-          : <><strong>Земля</strong><span>Наведите на страну, чтобы увидеть, есть ли в ней материалы</span></>}
+          : selected
+            ? <><strong>{COUNTRIES.find((country) => country.id === selected)?.name ?? 'Выбрано'}</strong><span>Планета остановлена. Крутить — правой кнопкой мыши</span></>
+            : <><strong>Земля</strong><span>Нажмите на страну, чтобы выбрать. Крутить планету — правой кнопкой мыши</span></>}
       </div>
     </div>
   }

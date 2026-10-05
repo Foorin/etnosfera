@@ -342,3 +342,47 @@ export const RELIEF: ReliefArea[] = [
     points: [[52.4, 57.6], [53.6, 57.4], [54.0, 56.8], [53.2, 56.2], [52.2, 56.5], [51.9, 57.1]],
   },
 ]
+
+// --- Фильтр по месту на страницах народа и темы ---
+// Раньше фильтровать можно было только по четырём регионам России. Теперь в список
+// попадают и страны СНГ, и их города, поэтому фильтр работает с местом, а не со строкой.
+
+export const FILTER_PLACES: Place[] = COUNTRIES.flatMap((country) => [
+  country,
+  ...(country.children ?? []).flatMap((child) => [child, ...(child.children ?? [])]),
+])
+
+export function placeByFilterId(id: string | null | undefined) {
+  if (!id) return null
+  return FILTER_PLACES.find((place) => place.id === id) ?? null
+}
+
+// Предикат вместо строки: место может быть страной, регионом, районом или селом.
+export function placePredicate(place: Place | null) {
+  if (!place) return () => true
+  if (place.id === 'ru') return (material: { country?: string }) => !material.country
+  if (place.countryName) return (material: { country?: string }) => material.country === place.countryName
+  if (place.regionName) return (material: { region: string }) => material.region === place.regionName
+  if (place.placeMatch) {
+    return (material: { place: string }) => place.placeMatch!.some((needle) => material.place.includes(needle))
+  }
+  return () => false
+}
+
+// Материалы народа и темы в выбранном месте. Место может быть любого уровня.
+export function materialsHere(peopleName: string | null, topicSlug: string | null, place: Place | null) {
+  const inPlace = placePredicate(place)
+  return MATERIALS.filter((material) =>
+    (!peopleName || material.people === peopleName)
+    && (!topicSlug || material.topic === topicSlug)
+    && inPlace(material))
+}
+
+export function countHere(peopleName: string | null, topicSlug: string | null, place: Place | null) {
+  return materialsHere(peopleName, topicSlug, place).length
+}
+
+// Места, где у народа есть материалы: в фильтре не предлагаем пустые варианты.
+export function placesWithPeople(peopleName: string) {
+  return FILTER_PLACES.filter((place) => place.id !== 'ru' && countHere(peopleName, null, place) > 0)
+}

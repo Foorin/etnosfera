@@ -416,15 +416,8 @@ footer { width: min(1320px, calc(100% - 64px)); margin: auto; padding: 35px 0 45
 
 /* --- Глобус и карты по уровням --- */
 .globe-stage { position: relative; display: grid; justify-items: center; gap: 14px; }
-.globe-svg { width: 100%; max-width: 440px; height: auto; display: block; }
+.globe-svg { width: 100%; height: auto; display: block; }
 .globe-stage.flat .globe-svg { max-width: none; }
-.globe-country { fill: #4f7a6d; stroke: #16352e; stroke-width: .4; transition: fill .15s; }
-.globe-country.has-materials { fill: #e0b055; cursor: pointer; }
-.globe-country.has-materials:hover { fill: #efc978; }
-.globe-pin { cursor: pointer; }
-.globe-pin circle { fill: #b5533b; }
-.globe-pin .pin-halo { fill: none; stroke: #b5533b; stroke-width: 1.5; opacity: .6; animation: pin-pulse 2.4s ease-out infinite; }
-@keyframes pin-pulse { 0% { r: 8; opacity: .7 } 100% { r: 20; opacity: 0 } }
 .globe-caption { min-height: 46px; text-align: center; display: grid; gap: 4px; }
 .globe-caption strong { color: #173d35; font: 700 19px/1.2 'Playfair Display', Georgia, serif; }
 .globe-caption span { color: #74837b; font-size: 11px; }
@@ -522,7 +515,7 @@ footer { width: min(1320px, calc(100% - 64px)); margin: auto; padding: 35px 0 45
 }
 
 /* Планету крутят рукой — показываем это курсором. */
-.globe-stage .globe-svg { cursor: grab; touch-action: none; }
+.globe-stage .globe-svg { touch-action: none; }
 .globe-stage .globe-svg.dragging { cursor: grabbing; }
 .globe-stage .globe-svg { user-select: none; -webkit-user-select: none; }
 .globe-stage .globe-svg * { user-select: none; }
@@ -610,3 +603,72 @@ footer { width: min(1320px, calc(100% - 64px)); margin: auto; padding: 35px 0 45
 .search-wrap { z-index: 12; }
 .search-results { max-height: min(420px, 60vh); }
 .hero-copy { z-index: 3; }
+
+/* Планета: по умолчанию ни одна страна не выделена. Страны с материалами светлее
+   остальных, но спокойные; золотым подсвечивается только наведённая или выбранная. */
+.globe-country { fill: #3f6b5e; stroke: #16352e; stroke-width: .4; transition: fill .15s; }
+.globe-country.has-materials { fill: #6e9480; cursor: pointer; }
+.globe-country.has-materials:hover { fill: #e9bd61; }
+.globe-country.selected { fill: #e0b055; stroke: #fffdf8; stroke-width: 1.1; }
+.globe-zoom { right: 10px; top: 10px; }
+.globe-zoom button { width: 30px; height: 30px; font-size: 15px; }
+.back-to-earth { margin-top: 10px; display: inline-flex; align-items: center; gap: 6px; }
+/* При приближении планета выходит за рамку кадра — обрезаем по области просмотра. */
+.globe-stage:not(.flat) .globe-svg { overflow: hidden; }
+/* В списке мест страны и регионы — заголовки, города под ними со отступом. */
+.region-filter-options .filter-head { font-weight: 800; color: #173d35; }
+/* Левой кнопкой выбирают страну, правой крутят планету — курсор это и показывает. */
+.globe-stage:not(.flat) .globe-svg { cursor: default; }
+.globe-stage:not(.flat) .globe-country.has-materials { cursor: pointer; }
+.globe-stage:not(.flat) .globe-svg.dragging,
+.globe-stage:not(.flat) .globe-svg.dragging .globe-country { cursor: grabbing; }
+/* Поле планеты — светлый прямоугольник во всю ширину блока; при увеличении
+   планета обрезается по его краям, а не по квадрату вокруг себя. */
+.earth-bg { fill: #fbf9f4; }
+/* Стрелка в фильтре места — кнопка, а не просто значок. */
+.region-filter-control .filter-toggle { border: 0; background: transparent; color: #8a958e; padding: 4px; display: flex; cursor: pointer; }
+.region-filter-control .filter-toggle:hover { color: #b5533b; }
+
+/* --- Переход между страницами --- */
+/* Страница появляется с лёгким сдвигом вверх: резкая подмена содержимого сбивает,
+   особенно когда карта и панель меняются целиком. */
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+.page-shell { animation: page-in .3s cubic-bezier(.22, .61, .36, 1) both; }
+
+/* Мелкие блоки внутри страницы подхватываются чуть позже — так переход читается
+   как одно движение, а не как мгновенная подстановка. */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+.page-shell .compact-publications,
+.page-shell .publication-grid,
+.page-shell .region-people-grid,
+.page-shell .ethnos-topic-grid,
+.page-shell .collection-grid,
+.page-shell .map-holder,
+.page-shell .material-gallery { animation: rise-in .42s cubic-bezier(.22, .61, .36, 1) both; animation-delay: .06s; }
+
+/* Плавнее реагируют и отдельные элементы, которые меняются без смены страницы. */
+.map-pin, .globe-country, .people-row, .theme-tile, .directory-card,
+.collection-card, .compact-publications > button, .publication-card {
+  transition: background-color .18s ease, border-color .18s ease, color .18s ease, transform .18s ease, opacity .18s ease;
+}
+.search-results { animation: rise-in .2s ease-out both; }
+
+/* Уважаем системную настройку: кому анимации мешают — тем их не показываем. */
+@media (prefers-reduced-motion: reduce) {
+  .page-shell,
+  .page-shell .compact-publications,
+  .page-shell .publication-grid,
+  .page-shell .region-people-grid,
+  .page-shell .ethnos-topic-grid,
+  .page-shell .collection-grid,
+  .page-shell .map-holder,
+  .page-shell .material-gallery,
+  .search-results { animation: none; }
+  * { transition-duration: .01ms !important; }
+}

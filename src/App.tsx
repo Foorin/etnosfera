@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
@@ -44,7 +44,7 @@ import { Globe } from './Globe'
 import { PeoplePicker } from './PeoplePicker'
 import { GlobalSearch } from './GlobalSearch'
 import type { PeopleRow } from './PeoplePicker'
-import { COUNTRIES, RUSSIA, countAtPlace, materialsAtPlace, pathToPlace, placeById } from './data/geo'
+import { COUNTRIES, FILTER_PLACES, RUSSIA, countAtPlace, countHere, materialsAtPlace, materialsHere, pathToPlace, placeById, placeByFilterId, placesWithPeople } from './data/geo'
 import type { Place } from './data/geo'
 import { AddToCollectionModal, AuthModal, CollectionModal, SuccessNote } from './AccountModals'
 import { COLLECTION_COVERS, DEMO_ACCOUNT, DEMO_COLLECTIONS, DEMO_POSTS, EMPTY_POST, FEATURED_COLLECTION, PUBLIC_COLLECTIONS } from './data/account'
@@ -141,14 +141,14 @@ function parseHash(): Location {
     ...HOME,
     route,
     people: PEOPLES.find((item) => item.slug === first)?.name ?? null,
-    region: regions.find((item) => item.id === second)?.id ?? null,
+    region: placeByFilterId(second)?.id ?? null,
   }
   if (route === 'topic') return {
     ...HOME,
     route,
     people: PEOPLES.find((item) => item.slug === first)?.name ?? null,
     topic: TOPICS.find((item) => item.slug === second)?.slug ?? null,
-    region: regions.find((item) => item.id === third)?.id ?? null,
+    region: placeByFilterId(third)?.id ?? null,
   }
   if (route === 'material') {
     const material = MATERIALS.find((item) => item.slug === first)
@@ -187,6 +187,15 @@ function materialsWord(count: number) {
   return `${count} материалов`
 }
 
+function pageKey(location: Location) {
+  if (location.route === 'map') return `map:${location.place.join('/')}`
+  if (location.route === 'people') return `people:${location.people ?? ''}`
+  if (location.route === 'topic') return `topic:${location.people ?? ''}:${location.topic ?? ''}`
+  if (location.route === 'material') return `material:${location.material ?? ''}`
+  if (location.route === 'collection') return `collection:${location.collection ?? ''}`
+  return location.route
+}
+
 function locationToHash(location: Location) {
   if (location.route === 'people') return [
     'people',
@@ -218,7 +227,9 @@ function App() {
   const [isAuthOpen, setIsAuthOpen] = useState(false)
   const [isCollectionOpen, setIsCollectionOpen] = useState(false)
   const [editingCollection, setEditingCollection] = useState<UserCollection | null>(null)
-  const [peoplePicker, setPeoplePicker] = useState<{ title: string; rows: PeopleRow[]; region: Region | null } | null>(null)
+  const [peoplePicker, setPeoplePicker] = useState<{ title: string; rows: PeopleRow[]; region: Place | null } | null>(null)
+  // Какая страна выбрана на планете. Пусто — показываем Землю целиком.
+  const [pickedCountry, setPickedCountry] = useState<Place | null>(null)
   const [catalogRegion, setCatalogRegion] = useState('Все регионы')
   const [catalogGroup, setCatalogGroup] = useState('Все группы')
   const [collectingMaterial, setCollectingMaterial] = useState<Material | null>(null)
@@ -235,10 +246,9 @@ function App() {
   // Свои коллекции идут первыми, чтобы только что созданная перекрывала одноимённую демонстрационную.
   const allCollections = [...myCollections, ...PUBLIC_COLLECTIONS]
     .filter((collection, index, list) => list.findIndex((item) => item.id === collection.id) === index)
-  // Фильтр по региону живёт в адресе, а не в состоянии: иначе он терялся бы при переходе в тему и при F5.
-  const ethnosRegionFilter = location.region
-    ? availableRegions.find((region) => region.id === location.region) ?? null
-    : null
+  // Фильтр по месту живёт в адресе, а не в состоянии: иначе он терялся бы при переходе
+  // в тему и при F5. Место может быть регионом России, страной СНГ или городом.
+  const ethnosRegionFilter = placeByFilterId(location.region)
 
   const selectRegion = (region: Region) => {
     setSelectedRegion(region)
@@ -284,8 +294,8 @@ function App() {
     go({ ...HOME, route: nextRoute })
   }
 
-  const openEthnos = (name: string, region: Region | null = null) => {
-    go({ ...HOME, route: 'people', people: name, region: region?.id ?? null })
+  const openEthnos = (name: string, place: { id: string } | null = null) => {
+    go({ ...HOME, route: 'people', people: name, region: place?.id ?? null })
   }
 
   const openTopic = (peopleName: string | null, topicSlug: string, regionId: string | null = null) => {
@@ -304,9 +314,11 @@ function App() {
     go({ ...HOME, route: 'material', people: material.people, topic: material.topic, material: material.slug })
   }
 
-  const setEthnosRegion = (region: Region) => {
-    setSelectedRegion(region)
-    go({ ...location, region: region.id })
+  const setEthnosRegion = (place: { id: string }) => {
+    // Если выбрали регион России, запоминаем его и для карты на главной.
+    const asRegion = availableRegions.find((region) => region.id === place.id)
+    if (asRegion) setSelectedRegion(asRegion)
+    go({ ...location, region: place.id })
   }
 
   const signIn = (nextAccount: Account) => {
@@ -492,6 +504,7 @@ function App() {
         </div>
       </header>
 
+      <div className="page-shell" key={pageKey(location)}>
       {route === 'home' ? <>
       <section className="hero" id="top">
         <div className="hero-copy">
@@ -536,27 +549,51 @@ function App() {
             <div className="map-toolbar">
               <span><Globe2 size={16} /> Планету можно крутить мышью</span>
             </div>
-            <Globe ids={[]} onGo={goPlace} />
+            <Globe ids={[]} onGo={goPlace} selected={pickedCountry?.id ?? null} onSelect={setPickedCountry} />
           </div>
 
           {/* Панель описывает то, что отмечено на глобусе, — страну, а не один регион. */}
           <aside className="region-panel">
-            <div className="panel-topline"><span>Отмечено на планете</span><Compass size={18} /></div>
-            <h3>Земля</h3>
-            <p>Народы России живут не только в России. Выберите страну на планете или в списке.</p>
-            <div className="region-stat"><b>{MATERIALS.length}</b><span>публикаций<br />в девяти странах</span></div>
-            <div className="people-list">
-              <span className="list-label">Страны с материалами</span>
-              {COUNTRIES.map((country) => (
-                <button className="people-row" onClick={() => goPlace([country.id])} key={country.id}>
-                  <i className={`tone-${country.tone ?? (country.id === 'ru' ? 'mari' : 'russian')}`} />
-                  <span>{country.name}</span>
-                  <b>{countAtPlace(country)}</b>
-                  <ArrowRight size={15} />
-                </button>
-              ))}
+            <div className="panel-topline"><span>{pickedCountry ? 'Выбрано на планете' : 'Планета'}</span><Compass size={18} /></div>
+            <h3>{pickedCountry ? pickedCountry.name : 'Земля'}</h3>
+            <p>{pickedCountry
+              ? pickedCountry.description ?? 'Материалы о народах России в этой стране.'
+              : 'Народы России живут не только в России. Выберите страну на планете или в списке.'}</p>
+            <div className="region-stat">
+              <b>{pickedCountry ? countAtPlace(pickedCountry) : MATERIALS.length}</b>
+              <span>{pickedCountry ? <>публикаций<br />в этой стране</> : <>публикаций<br />в девяти странах</>}</span>
             </div>
-            <button className="outline-button" onClick={() => goPlace(['ru'])}>Открыть карту России <ArrowRight size={16} /></button>
+
+            {pickedCountry
+              ? <>
+                  <div className="people-list">
+                    <span className="list-label">{pickedCountry.id === 'ru' ? 'Регионы с материалами' : 'Места с материалами'}</span>
+                    {(pickedCountry.children ?? []).map((child) => (
+                      <button className="people-row" onClick={() => goPlace([pickedCountry.id, child.id])} key={child.id}>
+                        <i className={`tone-${child.tone ?? 'russian'}`} />
+                        <span>{shortRegion(child.name)}</span>
+                        <b>{countAtPlace(child)}</b>
+                        <ArrowRight size={15} />
+                      </button>
+                    ))}
+                  </div>
+                  <button className="outline-button" onClick={() => goPlace([pickedCountry.id])}>Открыть карту <ArrowRight size={16} /></button>
+                  <button className="text-button back-to-earth" onClick={() => setPickedCountry(null)}><ArrowLeft size={14} /> Вернуться к Земле</button>
+                </>
+              : <>
+                  <div className="people-list">
+                    <span className="list-label">Страны с материалами</span>
+                    {COUNTRIES.map((country) => (
+                      <button className="people-row" onClick={() => setPickedCountry(country)} key={country.id}>
+                        <i className={`tone-${country.tone ?? (country.id === 'ru' ? 'mari' : 'russian')}`} />
+                        <span>{country.name}</span>
+                        <b>{countAtPlace(country)}</b>
+                        <ArrowRight size={15} />
+                      </button>
+                    ))}
+                  </div>
+                  <button className="outline-button" onClick={() => goPlace(['ru'])}>Открыть карту России <ArrowRight size={16} /></button>
+                </>}
           </aside>
         </div>
       </section>
@@ -670,14 +707,16 @@ function App() {
         {(() => {
           const place = placeById(location.place)
           const region = place.kind === 'region' ? availableRegions.find((item) => item.id === place.id) : null
-          const rows: PeopleRow[] = place.kind === 'country'
-            ? PEOPLES.map((people) => ({ name: people.name, tone: people.tone, group: people.group, count: countForPeople(people.name) }))
-            : region?.peoples.map((person) => ({
-                name: person.name,
-                tone: person.tone,
-                group: peopleByName(person.name)?.group,
-                count: countForPeople(person.name, region.name),
-              })) ?? []
+          // Показываем только те народы, у которых в этом месте есть материалы:
+          // иначе на странице Азербайджана предлагались марийцы с нулём публикаций.
+          const rows: PeopleRow[] = PEOPLES
+            .map((people) => ({
+              name: people.name,
+              tone: people.tone,
+              group: people.group,
+              count: countHere(people.name, null, place),
+            }))
+            .filter((row) => row.count > 0)
           // В панель помещается пять строк; остальные ищутся в отдельном окне.
           const shown = rows.slice(0, 5)
           const hidden = rows.length - shown.length
@@ -715,7 +754,7 @@ function App() {
               {rows.length > 0 && <div className="people-list">
                 <span className="list-label">{place.kind === 'country' ? 'Народы страны' : 'Народы региона'}</span>
                 {shown.map((row) => (
-                  <button className="people-row" onClick={() => openEthnos(row.name, region ?? null)} key={row.name}>
+                  <button className="people-row" onClick={() => openEthnos(row.name, place)} key={row.name}>
                     <i className={`tone-${row.tone}`} />
                     <span>{row.name}</span>
                     <b>{row.count}</b>
@@ -723,11 +762,11 @@ function App() {
                   </button>
                 ))}
                 {hidden > 0 && <button className="text-button picker-open" onClick={() => setPeoplePicker({
-                  title: place.kind === 'country' ? 'Народы России' : `Народы: ${shortRegion(place.name)}`,
+                  title: `Народы: ${shortRegion(place.name)}`,
                   rows,
-                  region: region ?? null,
+                  region: place,
                 })}>
-                  Другие народы {place.kind === 'country' ? 'страны' : 'в этом регионе'} ({hidden}) <ArrowRight size={15} />
+                  Другие народы ({hidden}) <ArrowRight size={15} />
                 </button>}
               </div>}
 
@@ -736,6 +775,28 @@ function App() {
               </button>}
             </aside>
           </div>
+        })()}
+
+        {(() => {
+          const place = placeById(location.place)
+          if (place.kind !== 'settlement') return null
+          const rows = PEOPLES
+            .map((people) => ({ name: people.name, tone: people.tone, count: countHere(people.name, null, place) }))
+            .filter((row) => row.count > 0)
+          if (rows.length === 0) return null
+          return <>
+            <div className="region-subheading materials-heading">
+              <div><p className="kicker">Народы этого места</p><h2>Про кого здесь записано</h2></div>
+            </div>
+            <div className="region-people-grid">{rows.map((row) => (
+              <button onClick={() => openEthnos(row.name, place)} key={row.name}>
+                <i className={`tone-${row.tone}`} />
+                <span>{row.name}</span>
+                <b>{row.count}</b>
+                <ArrowRight size={16} />
+              </button>
+            ))}</div>
+          </>
         })()}
 
         {(() => {
@@ -805,6 +866,8 @@ function App() {
         onSignOut={signOut}
       /> : <CorePages route={route} location={location} selectedRegion={selectedRegion} selectedEthnos={selectedEthnos} ethnosRegionFilter={ethnosRegionFilter} availableRegions={availableRegions} availablePublications={availablePublications} onNavigate={navigate} onSelectRegion={selectRegion} onOpenEthnos={openEthnos} onOpenTopic={openTopic} onOpenMaterial={openMaterial} onSetEthnosRegion={setEthnosRegion} onClearEthnosRegion={() => go({ ...location, region: null })} onCreateCollection={() => withAccount(() => setIsCollectionOpen(true))} collections={allCollections} onOpenCollection={openCollection} catalogRegion={catalogRegion} catalogGroup={catalogGroup} onCatalogRegion={setCatalogRegion} onCatalogGroup={setCatalogGroup} myCollections={myCollections} onSaveToCollection={(material) => withAccount(() => setCollectingMaterial(material))} onSaveCollection={(collection) => withAccount(() => saveCollectionToMine(collection))} onEditCollection={setEditingCollection} isMine={(collection) => myCollections.some((item) => item.id === collection.id)} />}
 
+      </div>
+
       <footer>
         <div className="brand footer-brand"><span className="brand-mark"><i /><i /><i /><i /></span><span>этносфера</span></div>
         <p>Цифровой атлас народов России. Пространство памяти, языка и живых историй.</p>
@@ -840,35 +903,40 @@ function App() {
   )
 }
 
+// Фильтр по месту: раньше предлагал только четыре региона России, теперь ещё страны
+// СНГ и их города. Варианты группируются по стране, чтобы длинный список читался.
 function RegionFilter({
   region,
-  availableRegions,
+  places,
   onSelect,
   onClear,
 }: {
-  region: Region | null
-  availableRegions: Region[]
-  onSelect: (region: Region) => void
+  region: Place | null
+  places: Place[]
+  onSelect: (place: Place) => void
   onClear: () => void
 }) {
-  const [query, setQuery] = useState(region?.name ?? 'Россия')
+  const [query, setQuery] = useState(region?.name ?? 'Везде')
   const [isOpen, setIsOpen] = useState(false)
-  const matches = availableRegions.filter((item) => item.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
+  const matches = places.filter((item) => item.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
 
   useEffect(() => {
-    setQuery(region?.name ?? 'Россия')
+    setQuery(region?.name ?? 'Везде')
   }, [region])
+
+  const field = useRef<HTMLInputElement | null>(null)
 
   const closeWithoutSelection = () => {
     window.setTimeout(() => {
       setIsOpen(false)
-      setQuery(region?.name ?? 'Россия')
+      setQuery(region?.name ?? 'Везде')
     }, 160)
   }
 
   return <div className="region-filter-control">
     <Search size={15} />
     <input
+      ref={field}
       value={query}
       onFocus={() => {
         setIsOpen(true)
@@ -879,15 +947,30 @@ function RegionFilter({
         setIsOpen(true)
       }}
       onBlur={closeWithoutSelection}
-      aria-label="Фильтр по региону"
+      aria-label="Фильтр по месту"
       aria-expanded={isOpen}
       aria-autocomplete="list"
     />
-    {region ? <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={onClear} aria-label="Снять фильтр по региону"><X size={14} /></button> : <ChevronDown size={16} />}
+    {region
+      ? <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={onClear} aria-label="Снять фильтр по месту"><X size={14} /></button>
+      : <button
+          type="button"
+          className="filter-toggle"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => { setIsOpen(!isOpen); if (!isOpen) field.current?.focus() }}
+          aria-label={isOpen ? 'Скрыть список мест' : 'Показать список мест'}
+          aria-expanded={isOpen}
+        ><ChevronDown size={16} /></button>}
     {isOpen && <div className="region-filter-options" role="listbox">
-      <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { onClear(); setIsOpen(false) }}>Россия</button>
-      {matches.map((item) => <button type="button" key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={() => { onSelect(item); setIsOpen(false) }}>{item.name}</button>)}
-      {matches.length === 0 && <span>Регион не найден</span>}
+      <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { onClear(); setIsOpen(false) }}>Везде</button>
+      {matches.map((item) => <button
+        type="button"
+        key={item.id}
+        className={item.kind === 'country' || item.kind === 'region' ? 'filter-head' : ''}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => { onSelect(item); setIsOpen(false) }}
+      >{item.kind === 'settlement' ? `— ${item.name}` : item.name}</button>)}
+      {matches.length === 0 && <span>Место не найдено</span>}
     </div>}
   </div>
 }
@@ -924,15 +1007,15 @@ function CorePages({
   location: Location
   selectedRegion: Region
   selectedEthnos: string
-  ethnosRegionFilter: Region | null
+  ethnosRegionFilter: Place | null
   availableRegions: Region[]
   availablePublications: Material[]
   onNavigate: (route: string) => void
   onSelectRegion: (region: Region) => void
-  onOpenEthnos: (name: string, region?: Region | null) => void
+  onOpenEthnos: (name: string, place?: { id: string } | null) => void
   onOpenTopic: (peopleName: string | null, topicSlug: string, regionId?: string | null) => void
   onOpenMaterial: (material: Material) => void
-  onSetEthnosRegion: (region: Region) => void
+  onSetEthnosRegion: (place: { id: string }) => void
   onClearEthnosRegion: () => void
   onCreateCollection: () => void
   collections: UserCollection[]
@@ -1005,7 +1088,7 @@ function CorePages({
     const ethnos = peopleByName(selectedEthnos)
       ?? { selfName: 'народ', tone: 'mari', count: '0', description: 'Материалы выбранного народа.', regions: 'Россия' }
 
-    const materialCount = countForPeople(selectedEthnos, ethnosRegionFilter?.name ?? null)
+    const materialCount = countHere(selectedEthnos, null, ethnosRegionFilter)
 
     return <section className="inner-page ethnos-page">
       <div className="breadcrumbs">
@@ -1016,12 +1099,18 @@ function CorePages({
       </div>
       <div className={`ethnos-hero ethnos-${ethnos.tone}`}>
         <div className="ethnos-hero-pattern"><i /><i /><i /><i /><i /></div>
-        <div className="ethnos-hero-copy"><span>{selectedEthnos.toUpperCase()} · {ethnos.selfName.toUpperCase()}</span><h1>{selectedEthnos}</h1><p>{ethnosRegionFilter ? `Истории народа «${selectedEthnos}», связанные с регионом «${ethnosRegionFilter.name}».` : ethnos.description}</p></div>
+        <div className="ethnos-hero-copy"><span>{selectedEthnos.toUpperCase()} · {ethnos.selfName.toUpperCase()}</span><h1>{selectedEthnos}</h1><p>{ethnosRegionFilter ? `Истории народа «${selectedEthnos}», связанные с местом «${ethnosRegionFilter.name}».` : ethnos.description}</p></div>
         <div className="ethnos-stats"><b>{materialCount}</b><span>материалов</span><small><MapPin size={14} /> {ethnosRegionFilter ? ethnosRegionFilter.name : ethnos.regions}</small></div>
       </div>
-      <div className="ethnos-filterbar"><span>Регион:</span><RegionFilter region={ethnosRegionFilter} availableRegions={availableRegions} onSelect={onSetEthnosRegion} onClear={onClearEthnosRegion} /></div>
-      <div className="ethnos-topic-heading"><div><p className="kicker">Выберите тему</p><h2>С чего начнём знакомство?</h2></div><p>{ethnosRegionFilter ? `Тема покажет истории о ${selectedEthnos.toLowerCase()} в регионе «${ethnosRegionFilter.name}».` : `Тема покажет все публикации о ${selectedEthnos.toLowerCase()} из разных регионов.`}</p></div>
-      <div className="ethnos-topic-grid">{TOPICS.map((topic) => <button className={topic.tone} key={topic.slug} onClick={() => onOpenTopic(selectedEthnos, topic.slug, ethnosRegionFilter?.id ?? null)}><span>{topic.description}<i className="topic-count">{materialsWord(countForTopic(topic.slug, selectedEthnos, ethnosRegionFilter?.name ?? null))}</i></span><strong>{topic.title}</strong><ArrowRight size={19} /></button>)}</div>
+      <div className="ethnos-filterbar">
+        <span>Место:</span>
+        <RegionFilter region={ethnosRegionFilter} places={placesWithPeople(selectedEthnos)} onSelect={onSetEthnosRegion} onClear={onClearEthnosRegion} />
+        <span className="filter-hint">{ethnosRegionFilter
+          ? `${materialsWord(countHere(selectedEthnos, null, ethnosRegionFilter))} здесь`
+          : 'Можно выбрать регион России, страну СНГ или отдельный город'}</span>
+      </div>
+      <div className="ethnos-topic-heading"><div><p className="kicker">Выберите тему</p><h2>С чего начнём знакомство?</h2></div><p>{ethnosRegionFilter ? `Тема покажет истории о ${selectedEthnos.toLowerCase()} в «${ethnosRegionFilter.name}».` : `Тема покажет все публикации о ${selectedEthnos.toLowerCase()} из разных мест.`}</p></div>
+      <div className="ethnos-topic-grid">{TOPICS.map((topic) => <button className={topic.tone} key={topic.slug} onClick={() => onOpenTopic(selectedEthnos, topic.slug, ethnosRegionFilter?.id ?? null)}><span>{topic.description}<i className="topic-count">{materialsWord(countHere(selectedEthnos, topic.slug, ethnosRegionFilter))}</i></span><strong>{topic.title}</strong><ArrowRight size={19} /></button>)}</div>
       <div className="ethnos-bottom"><div><p className="kicker">На карте</p><h2>Где живут эти истории</h2><p>{ethnos.regions}</p></div><button className="outline-button" onClick={() => onNavigate('region')}><Map size={16} /> Смотреть регионы на карте</button></div>
     </section>
   }
@@ -1030,8 +1119,8 @@ function CorePages({
     const topic = topicBySlug(location.topic ?? TOPICS[0].slug)
     const peopleName = location.people
     const regionName = ethnosRegionFilter?.name ?? null
-    const items = materialsFor(peopleName, topic.slug, regionName)
-    const everywhere = materialsFor(peopleName, topic.slug).length
+    const items = materialsHere(peopleName, topic.slug, ethnosRegionFilter)
+    const everywhere = materialsHere(peopleName, topic.slug, null).length
 
     return <section className="inner-page topic-page">
       <div className="breadcrumbs">
@@ -1042,14 +1131,19 @@ function CorePages({
       </div>
       <div className={`topic-hero ${topic.tone}`}>
         <div><span>{peopleName ? peopleName.toUpperCase() : 'ВСЕ НАРОДЫ'}{regionName ? ` · ${regionName.toUpperCase()}` : ''}</span><h1>{topic.title}</h1><p>{topic.description}</p></div>
-        <div className="topic-hero-stat"><b>{items.length}</b><span>{items.length === 1 ? 'материал' : 'материалов'}<br />{regionName ? 'в этом регионе' : 'в этой теме'}</span></div>
+        <div className="topic-hero-stat"><b>{items.length}</b><span>{items.length === 1 ? 'материал' : 'материалов'}<br />{ethnosRegionFilter ? 'в этом месте' : 'в этой теме'}</span></div>
       </div>
       <div className="ethnos-filterbar">
-        <span>Регион:</span>
-        <RegionFilter region={ethnosRegionFilter} availableRegions={availableRegions} onSelect={onSetEthnosRegion} onClear={onClearEthnosRegion} />
-        <span className="filter-hint">{regionName
-          ? `${materialsWord(items.length)} в этом регионе из ${everywhere} у народа «${peopleName}»`
-          : 'Выберите регион, чтобы увидеть истории этого народа в конкретной республике'}</span>
+        <span>Место:</span>
+        <RegionFilter
+          region={ethnosRegionFilter}
+          places={peopleName ? placesWithPeople(peopleName) : FILTER_PLACES.filter((place) => place.id !== 'ru')}
+          onSelect={onSetEthnosRegion}
+          onClear={onClearEthnosRegion}
+        />
+        <span className="filter-hint">{ethnosRegionFilter
+          ? `${materialsWord(items.length)} здесь из ${everywhere}${peopleName ? ` у народа «${peopleName}»` : ''}`
+          : 'Можно выбрать регион России, страну СНГ или отдельный город'}</span>
       </div>
       <div className="region-subheading materials-heading">
         <div><p className="kicker">Материалы темы</p><h2>{peopleName ? `${topic.title}: ${peopleName.toLowerCase()}` : 'Из разных культур'}</h2></div>
@@ -1059,8 +1153,8 @@ function CorePages({
         ? <div className="compact-publications">{items.map((item) => <button key={item.slug} onClick={() => onOpenMaterial(item)}><span className={`compact-image image-${item.image}`} /><span><small>{item.people} · {item.type}</small><strong>{item.title}</strong><em>{item.author} · {materialWhere(item)}</em></span><ArrowRight size={17} /></button>)}</div>
         : <div className="empty-note">
             <Sparkles size={18} />
-            <span>{regionName ? `В регионе «${regionName}» по этой теме пока нет материалов.` : 'В этой теме пока нет опубликованных материалов. Вы можете стать первым автором.'}</span>
-            {regionName && everywhere > 0 && <button className="outline-button" onClick={() => onOpenTopic(peopleName, topic.slug, null)}>Смотреть во всех регионах ({everywhere})</button>}
+            <span>{regionName ? `В «${regionName}» по этой теме пока нет материалов.` : 'В этой теме пока нет опубликованных материалов. Вы можете стать первым автором.'}</span>
+            {regionName && everywhere > 0 && <button className="outline-button" onClick={() => onOpenTopic(peopleName, topic.slug, null)}>Смотреть везде ({everywhere})</button>}
           </div>}
     </section>
   }
